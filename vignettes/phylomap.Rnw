@@ -1,0 +1,153 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath}
+\usepackage{comment}
+\usepackage{amscd}
+\usepackage[utf8]{inputenc}
+\usepackage{fancyhdr}
+\usepackage{url}
+
+\usepackage{calc}
+%\usepackage{natbib}
+\bibliographystyle{apalike}
+\usepackage[american]{babel}
+
+\setlength{\paperheight}{11in}
+\setlength{\paperwidth}{8.5in}
+\addtolength{\voffset}{-1.0in}
+\addtolength{\hoffset}{-1.0in}
+\setlength{\topmargin}{1in}
+\setlength{\oddsidemargin}{1in}
+\setlength{\evensidemargin}{1in}
+\setlength{\textwidth}{\paperwidth - 2in}
+\setlength{\textheight}{\paperheight - 2in}
+\setlength{\footskip}{36pt}
+\setlength{\marginparsep}{0.5cm}
+\setlength{\marginparwidth}{1.5cm}
+\setlength{\headheight}{0pt}
+\setlength{\headsep}{0pt}
+
+
+
+\pagestyle{fancy}
+\renewcommand{\headrulewidth}{0pt}
+\lhead{}
+\chead{}
+\rhead{}
+\lfoot{}
+\cfoot{\thepage}
+\rfoot{}
+
+\SweaveOpts{keep.source=FALSE}
+
+\begin{document}
+%\VignetteIndexEntry{phylomap_tutorial}
+<<echo=FALSE>>=
+options(width=74, continue=" ")
+@
+
+\begin{center}
+  {\LARGE A phylomap tutorial}\\\ \\
+  {Jan Irvahn and Vladimir N. Minin \\ 
+    Department of Statistics, University of Washington Seattle, WA, 98195, USA
+  }
+\end{center}
+
+This is a tutorial demonstrating the R package, phylomap. To get started, install the phylomap R package from GitHub. 
+\begin{verbatim}
+> install.packages("devtools")
+> library(devtools)
+> install_github("phylomap")
+\end{verbatim}
+
+Start R and load the phylomap library.
+<<one>>=
+library(phylomap)
+@
+
+Create a tridiagonal rate matrix.
+<<two>>=
+Q<-matrix(rep(0,400),nrow=20) 
+for(j in 1:19) Q[j,j+1]<-.003
+for(j in 2:20) Q[j,j-1]<-.003
+diag(Q)<-0
+diag(Q)<-apply(-Q,1,sum)
+@
+
+
+\begin{comment}
+Get the GY94 rate matrix from the phylosim R package \cite{sipos2011phylosim}.
+<<two>>=
+library(phylosim)
+p<-GY94()
+Q<-getMatrix(getQMatrix(p))
+Q<-Q/25
+@
+\end{comment}
+
+Use the R package diversitree \cite{fitzjohn2012diversitree}, to simulate a phylogeny with 50 tips. 
+<<three>>=
+numtips<-50
+phy<-NULL
+while(is.null(phy)) phy<-tree.bd(c(.1,.03),max.taxa=numtips)
+dimQ<-dim(Q)[1]
+q<-as.vector(t(Q))[-seq(from=1,to=(dimQ^2),
+     by=(dimQ+1))]
+x<-NULL
+x = sim.character(phy,pars=Q,x0=1,model="mkn",br=NULL)
+lik <- make.mkn(phy,x[1:numtips],dimQ,strict=FALSE)
+y = asr.stoch(lik, q)
+z<-divtophy(phy,y)
+z<-makemapnames(z)
+@
+
+Set your prior probabilities for the state of the root.
+<<four>>=
+pid<-rep(1/dimQ,dimQ)
+@
+
+Set your tuning parameter, and the number of substitution histories to generate.
+<<five>>=
+Omega=0.2
+N=1000
+@
+
+Create N substitution histories with matrix exponentiation and without matrix exponentiation (sparse and not sparse).
+<<six>>=
+clEXP<-sumstatEXP(z,Q,pid,N)
+clMCMC<-sumstatMCMC(z,Q,pid,Omega,N)
+clSPARSE<-SPARSEsumstatMCMC(z,Q,pid,Omega,N)
+@
+
+
+Create a histogram of the number of jumps for the three different methods.
+<<seven>>=
+numjumpEXP<-apply(
+   clEXP[,(dimQ+1):(dimQ+dimQ*(dimQ-1))],1,sum)
+numjumpMCMC<-apply(
+   clMCMC[,(dimQ+1):(dimQ+dimQ*(dimQ-1))],1,sum)
+numjumpSPARSE<-apply(
+   clSPARSE[,(dimQ+1):(dimQ+dimQ*(dimQ-1))],1,sum)
+<<label=phylomapHist,include=FALSE>>=
+multhist(numjumpEXP,numjumpMCMC,numjumpSPARSE)
+@
+\begin{figure}[!t]
+  \centering
+<<label=phylomapHist,fig=TRUE,echo=FALSE>>=
+<<phylomapHist>>
+@
+\caption{We show the distribution of the number of transitions on a phylogenetic tree for three methods.}
+\label{hist}
+\end{figure} 
+
+
+%\bibliography{phylomap_tutorial}
+
+\begin{thebibliography}{apalike}
+\bibitem{fitzjohn2012diversitree} FitzJohn, Richard G (2012) Diversitree: comparative phylogenetic analyses of diversification in R. {\em Methods in Ecology and Evolution}, {\bf 3}, 1084-1092.
+\bibitem{sipos2011phylosim} Sipos {\em et al.} (2005) PhyloSim-Monte Carlo simulation of sequence evolution in the R statistical computing environment. {\em BMC bioinformatics}, {\bf 12}, 104.
+\end{thebibliography}
+
+
+\end{document}
+

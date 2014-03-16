@@ -1,0 +1,4 @@
+useDynLib(phylomap)
+exportPattern("^[[:alpha:]]+")
+
+import("diversitree")

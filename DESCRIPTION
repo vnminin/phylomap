@@ -1,0 +1,11 @@
+Package: phylomap
+Type: Package
+Title: Phylogenetic Stochastic Mapping
+Version: 1.0
+Date: 2014-02-06
+Author: Jan Irvahn
+Maintainer: Vladimir Minin <vminin@uw.edu>
+Description: Phylogenetic Stochastic Mapping without Matrix Exponentiation
+License: GPL-3
+Depends: Rcpp (>= 0.10.5), RcppArmadillo (>= 0.3.920.1), diversitree
+LinkingTo: Rcpp, RcppArmadillo
