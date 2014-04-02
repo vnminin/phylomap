@@ -57,7 +57,7 @@ This is a tutorial demonstrating the R package, phylomap. To get started, instal
 \begin{verbatim}
 > install.packages("devtools")
 > library(devtools)
-> install_github("phylomap")
+> install_github("vnminin/phylomap")
 \end{verbatim}
 
 Start R and load the phylomap library.
