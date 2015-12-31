@@ -13,3 +13,10 @@ maketreelistEXP <- function(x, Q, pid, nen, nodelist, root, N, lefts, rights, d)
     .Call('phylomap_maketreelistEXP', PACKAGE = 'phylomap', x, Q, pid, nen, nodelist, root, N, lefts, rights, d)
 }
 
+#
+# rate matrix uncertain
+#
+
+maketreelistMCMCbf <- function(x,Q,pid,B,Omega,nen,nodelist,root,N,prior) {
+    .Call('phylomap_maketreelistMCMCbf', PACKAGE = 'phylomap', x,Q,pid,B,Omega,nen,nodelist,root,N,prior)
+}
