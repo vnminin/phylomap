@@ -20,3 +20,7 @@ maketreelistEXP <- function(x, Q, pid, nen, nodelist, root, N, lefts, rights, d)
 maketreelistMCMCbf <- function(x,Q,pid,B,Omega,nen,nodelist,root,N,prior) {
     .Call('phylomap_maketreelistMCMCbf', PACKAGE = 'phylomap', x,Q,pid,B,Omega,nen,nodelist,root,N,prior)
 }
+
+maketreelistMCMCks <- function(x,Q,pid,B,Omega,nen,nodelist,root,N,prior) {
+    .Call('phylomap_maketreelistMCMCks', PACKAGE = 'phylomap', x,Q,pid,B,Omega,nen,nodelist,root,N,prior)
+}

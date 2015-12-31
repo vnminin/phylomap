@@ -1159,9 +1159,569 @@ NumericMatrix maketreelistMCMCbf(List& x,NumericMatrix& Q,NumericVector& pid,Num
 
 
 
+//////////////////////////////////////// Update Q matrix approach for k states ////////////////////////////////////////////////////////////
 
 
 
+arma::irowvec sampleinternalnodesMCMCks(std::vector<Branch> *brancharray,int branchnumber,arma::mat* PL,arma::rowvec* pid,arma::mat* B2,arma::mat* B4,int root,IntegerVector nodelist,arma::irowvec* ne,arma::imat* edge,arma::irowvec* edge1,arma::irowvec* edge2,int Nnode,arma::irowvec* states,arma::mat* dwelltimes,int iteration) {
+  RNGScope scope;
+ 
+  int i;
+  int j;
+
+  arma::irowvec branchlengths=arma::zeros<arma::irowvec>(branchnumber);
+  for(i=0;i<branchnumber;i++) branchlengths(i)=((*brancharray)[i]).names.size();
+
+  int n = (*B2).n_rows;
+
+  // states: vector containing tip node states
+  // sss: number of tips
+  int sss=(*states).size(); 
+  // edge: matrix containing parent labels (column 1) and child labels (column 2) for each edge (row)
+  // arma::imat edge = as<arma::imat>(xtree["edge"]);
+
+  // rm: vector to be returned, containing the states of all the nodes (tip nodes included)
+  arma::irowvec rm=arma::zeros<arma::irowvec>(2*sss-1);
+  // tip states remain unchanged
+  for(i=0;i<sss;i++) rm(i)=(*states)(i)-1;
+  // pid: the probability vector for states at the root
+  // PL is the partial likelihood matrix, it the probability of the observed tip states under each node (row) assuming that node is in: state 1 (column 1), state 2 (column 2), ...
+  makePLnormalized(edge1,edge2,Nnode,PL,ne,B2,branchlengths); 
+
+  // covec is proportional to the vector of probabilities, Pr(root|tip states)
+  arma::rowvec covec = (*pid)%(*PL).row(root-1);
+  // tops is a NumericVector version of covec
+  NumericVector tops(n);
+  for(i=0;i<n;i++) tops(i)= covec(i);
+  // sts is a vector of state names from 0 to n-1
+  IntegerVector sts(n);
+  sts(0)=0;
+  for(i=1;i<n;i++) sts(i)=sts(i-1)+1;
+  // sample the root state, armadillo's sample function requires a NumericVector of probabilities
+  rm(root-1)=as<int>(RcppArmadillo::sample(sts,1,1,tops));
+  int k=n/2-1;
+  int um=n+n*n+2+3*k;
+  (*dwelltimes)(iteration,um)=rm(root-1);
+  //arma::rowvec vecc = arma::zeros<arma::rowvec>(n);
+  arma::vec vecc = arma::zeros<arma::vec>(n);
+  NumericVector veccer(n);
+
+  int cn;
+  int pn;
+  int ps;
+  int ae;
+  int nll = nodelist.size();
+
+  if(nll>0) {  
+    // sample a state for each (non-root) internal node starting below the root and working down
+    for(i=0;i<nll;i++) {
+      cn=nodelist(i)-1; //child node
+      j=0;
+      while((*edge)(j,1)!=nodelist(i)) j++;
+      pn = (*edge)(j,0)-1; //parent node
+      ps = rm(pn); //parent state
+      ae = j; //appropriate edge
+
+      // (probability of transitioning from parent state to child state) * (probability of tips below child | child state)
+      vecc = arma::zeros<arma::vec>(n);
+      vecc(ps) = 1;
+      vecc = Tvmmp(B4,vecc,branchlengths(ae)-1)%trans((*PL).row(cn));
+
+      // armadillo sample needs a NumericVector
+      for(j=0;j<n;j++) veccer(j)=vecc(j);
+      rm(cn)=as<int>(RcppArmadillo::sample(sts,1,1,veccer));
+    }
+  }
+
+  // update tip node states - they don't actually remain the same anymore
+  for(i=0;i<(*edge2).size();i++){
+    if((*edge)(i,1)<=sss) {
+      cn=(*edge)(i,1)-1;
+      pn=(*edge)(i,0)-1;
+      ps = rm(pn);
+      ae = i;
+      vecc = arma::zeros<arma::vec>(n);
+      vecc(ps) = 1;
+      vecc = Tvmmp(B4,vecc,branchlengths(ae)-1)%trans((*PL).row(cn));
+      for(j=0;j<n;j++) veccer(j)=vecc(j);
+      rm(cn)=as<int>(RcppArmadillo::sample(sts,1,1,veccer));
+    }
+  }
+  //
+
+  for(i=0;i<(2*sss-1);i++) rm(i)=rm(i)+1;
+  return rm;
+
+}
+
+void updatenodestates4s(std::vector<Branch> *brancharray,arma::imat* edge,arma::imat* nodestatesmatrix,arma::irowvec nodestates) {
+  std::list<int>::iterator nit;
+  int numedge = (*edge).n_rows;
+  for(int i=0;i<numedge;i++) {
+    //nodestatesmatrix starts the state space at 1
+    (*nodestatesmatrix)(i,0)=nodestates((*edge)(i,0)-1);
+    (*nodestatesmatrix)(i,1)=nodestates((*edge)(i,1)-1);
+    //brancharray starts the state space at 0
+    nit = ((*brancharray)[i]).names.begin();
+    (*nit)=(nodestates((*edge)(i,0)-1)-1);
+    nit = ((*brancharray)[i]).names.end();
+    --nit;
+    (*nit)=(nodestates((*edge)(i,1)-1)-1);
+  }
+  return;
+}
+
+void treesampleks(NumericMatrix* Q,arma::rowvec* pid,arma::mat* B2,arma::mat* B4,double Omega,arma::irowvec* ne,std::vector<Branch> *brancharray,int branchnumber,arma::imat* nodestatesmatrix,arma::mat* dwelltimes,int root,arma::mat* PL,IntegerVector nodelist,int iteration,int N,arma::irowvec* states,arma::imat* edge,arma::irowvec* edge1,arma::irowvec* edge2,int Nnode) {
+RNGScope scope;
+
+  int i;
+  updatenodestates4s(brancharray,edge,nodestatesmatrix,sampleinternalnodesMCMCks(brancharray,branchnumber,PL,pid,B2,B4,root,nodelist,ne,edge,edge1,edge2,Nnode,states,dwelltimes,iteration));
+  // for each branch, resample segmental states
+  for(i=0;i<branchnumber;i++) sampleabranchbf(&((*brancharray)[i]),B2,Omega,Q,dwelltimes,(*Q).nrow(),iteration);
+  for(i=0;i<branchnumber;i++) updatedwelltimes(iteration,&((*brancharray)[i]),dwelltimes);
+
+  return;
+}
+
+
+void updateksl01(NumericMatrix* Q,arma::mat* B2,arma::mat* B4,arma::mat* dwelltimes,int iteration,double Omega,NumericVector prior) {
+
+  int i;
+  int j;
+  int n = (*Q).nrow();
+  int k=n/2-1;
+  arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+  lambdas(0)=(*Q)(0,1);
+  lambdas(1)=(*Q)(1,0); 
+  arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) rkappas(i)=(*Q)(2*i,2*i+2);
+  arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) lkappas(i)=(*Q)(2*i+2,2*i);
+  arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+  gammas(0)=1;
+  for(i=1;i<=k;i++) gammas(i)=(*Q)(2*i,2*i+1)/lambdas(0);
+
+  arma::rowvec sojourntimes = arma::zeros<arma::rowvec>(n);
+  arma::rowvec transitioncounts = arma::zeros<arma::rowvec>(n*n);
+  
+  for(i=0;i<n;i++) sojourntimes(i)=(*dwelltimes)(iteration,i);
+  for(i=0;i<n;i++) for(j=0;j<n;j++) transitioncounts(i*n+j)=(*dwelltimes)(iteration,n+i*n+j);
+
+  double alphaprime = prior(0);
+  for(i=0;i<=k;i++) alphaprime=alphaprime+transitioncounts(2*i*n+2*i+1);
+  double betaprime = prior(1);
+  for(i=0;i<=k;i++) betaprime=betaprime+gammas(i)*sojourntimes(2*i);
+
+    double newl01=::Rf_rgamma(alphaprime, 1/betaprime);
+
+    double gammatimes=betaprime-prior(1);
+    double logaccept = (newl01-lambdas(0))*gammatimes;
+    logaccept=logaccept+transitioncounts(0)*log((Omega-rkappas(0)-gammas(0)*newl01)/(Omega-rkappas(0)-gammas(0)*lambdas(0)));
+    for(i=1;i<k;i++) logaccept=logaccept+transitioncounts(2*i*n+2*i)*log((Omega-rkappas(i)-lkappas(i-1)-gammas(i)*newl01)/(Omega-rkappas(i)-lkappas(i-1)-gammas(i)*lambdas(0)));
+    logaccept=logaccept+transitioncounts(2*k*n+2*k)*log((Omega-lkappas(k-1)-gammas(k)*newl01)/(Omega-lkappas(k-1)-gammas(k)*lambdas(0)));
+
+    double compare= as<double>(runif(1));
+
+    if(newl01+rkappas(0)>Omega) return;
+    for(i=1;i<k;i++) if(gammas(i)*newl01+rkappas(i)+lkappas(i-1)>Omega) return;
+    if(gammas(k)*newl01+lkappas(k-1)>Omega) return;
+    // the following line is wrong but we run up against machine precision otherwise...
+    if(newl01<1e-300) return;
+
+    if(logaccept<log(compare)) return;
+
+    (*Q)(0,0)=-rkappas(0)-gammas(0)*newl01;
+    (*Q)(0,1)=gammas(0)*newl01;
+    (*B2)(0,0)=1+(*Q)(0,0)/Omega;
+    (*B2)(0,1)=(*Q)(0,1)/Omega;
+    (*B4)(0,0)=1+(*Q)(0,0)/Omega;
+    (*B4)(1,0)=(*Q)(0,1)/Omega;
+
+    for(i=1;i<k;i++) {
+      (*Q)(2*i,2*i)=-lkappas(i-1)-rkappas(i)-gammas(i)*newl01;
+      (*Q)(2*i,2*i+1)=gammas(i)*newl01;
+      (*B2)(2*i,2*i)=1+(*Q)(2*i,2*i)/Omega;
+      (*B2)(2*i,2*i+1)=(*Q)(2*i,2*i+1)/Omega;
+      (*B4)(2*i,2*i)=1+(*Q)(2*i,2*i)/Omega;
+      (*B4)(2*i+1,2*i)=(*Q)(2*i,2*i+1)/Omega;
+    }
+
+    (*Q)(2*k,2*k)=-lkappas(k-1)-gammas(k)*newl01;
+    (*Q)(2*k,2*k+1)=gammas(k)*newl01;
+    (*B2)(2*k,2*k)=1+(*Q)(2*k,2*k)/Omega;
+    (*B2)(2*k,2*k+1)=(*Q)(2*k,2*k+1)/Omega;
+    (*B4)(2*k,2*k)=1+(*Q)(2*k,2*k)/Omega;
+    (*B4)(2*k+1,2*k)=(*Q)(2*k,2*k+1)/Omega;
+
+  return;
+}
+
+
+
+void updateksl10(NumericMatrix* Q,arma::mat* B2,arma::mat* B4,arma::mat* dwelltimes,int iteration,double Omega,NumericVector prior) {
+
+  int i;
+  int j;
+  int n = (*Q).nrow();
+  int k=n/2-1;
+  arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+  lambdas(0)=(*Q)(0,1);
+  lambdas(1)=(*Q)(1,0); 
+  arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) rkappas(i)=(*Q)(2*i,2*i+2);
+  arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) lkappas(i)=(*Q)(2*i+2,2*i);
+  arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+  gammas(0)=1;
+  for(i=1;i<=k;i++) gammas(i)=(*Q)(2*i,2*i+1)/lambdas(0);
+
+
+  arma::rowvec sojourntimes = arma::zeros<arma::rowvec>(n);
+  arma::rowvec transitioncounts = arma::zeros<arma::rowvec>(n*n);
+  
+  for(i=0;i<n;i++) sojourntimes(i)=(*dwelltimes)(iteration,i);
+  for(i=0;i<n;i++) for(j=0;j<n;j++) transitioncounts(i*n+j)=(*dwelltimes)(iteration,n+i*n+j);
+
+  double alphaprime = prior(0);
+  for(i=0;i<=k;i++) alphaprime=alphaprime+transitioncounts((2*i+1)*n+2*i);
+  double betaprime = prior(1);
+  for(i=0;i<=k;i++) betaprime=betaprime+gammas(i)*sojourntimes(2*i+1);
+
+    double newl10=::Rf_rgamma(alphaprime, 1/betaprime);
+
+    double gammatimes=betaprime-prior(1);
+    double logaccept = (newl10-lambdas(1))*gammatimes;
+    logaccept=logaccept+transitioncounts(n+1)*log((Omega-rkappas(0)-gammas(0)*newl10)/(Omega-rkappas(0)-gammas(0)*lambdas(1)));
+    for(i=1;i<k;i++) logaccept=logaccept+transitioncounts((2*i+1)*n+2*i+1)*log((Omega-rkappas(i)-lkappas(i-1)-gammas(i)*newl10)/(Omega-rkappas(i)-lkappas(i-1)-gammas(i)*lambdas(1)));
+    logaccept=logaccept+transitioncounts((2*k+1)*n+2*k+1)*log((Omega-lkappas(k-1)-gammas(k)*newl10)/(Omega-lkappas(k-1)-gammas(k)*lambdas(1)));
+
+    double compare= as<double>(runif(1));
+
+    if(newl10+rkappas(0)>Omega) return;
+    for(i=1;i<k;i++) if(gammas(i)*newl10+rkappas(i)+lkappas(i-1)>Omega) return;
+    if(gammas(k)*newl10+lkappas(k-1)>Omega) return;
+    // the following line is wrong but we run up against machine precision otherwise...
+    if(newl10<1e-300) return;
+
+    if(logaccept<log(compare)) return;
+
+    (*Q)(1,1)=-rkappas(0)-gammas(0)*newl10;
+    (*Q)(1,0)=gammas(0)*newl10;
+    (*B2)(1,1)=1+(*Q)(1,1)/Omega;
+    (*B2)(1,0)=(*Q)(1,0)/Omega;
+    (*B4)(1,1)=1+(*Q)(1,1)/Omega;
+    (*B4)(0,1)=(*Q)(1,0)/Omega;
+    
+
+
+    for(i=1;i<k;i++) {
+      (*Q)(2*i+1,2*i+1)=-lkappas(i-1)-rkappas(i)-gammas(i)*newl10;
+      (*Q)(2*i+1,2*i)=gammas(i)*newl10;
+      (*B2)(2*i+1,2*i+1)=1+(*Q)(2*i+1,2*i+1)/Omega;
+      (*B2)(2*i+1,2*i)=(*Q)(2*i+1,2*i)/Omega;
+      (*B4)(2*i+1,2*i+1)=1+(*Q)(2*i+1,2*i+1)/Omega;
+      (*B4)(2*i,2*i+1)=(*Q)(2*i+1,2*i)/Omega;
+    }
+
+    (*Q)(2*k+1,2*k+1)=-lkappas(k-1)-gammas(k)*newl10;
+    (*Q)(2*k+1,2*k)=gammas(k)*newl10;
+    (*B2)(2*k+1,2*k+1)=1+(*Q)(2*k+1,2*k+1)/Omega;
+    (*B2)(2*k+1,2*k)=(*Q)(2*k+1,2*k)/Omega;
+    (*B4)(2*k+1,2*k+1)=1+(*Q)(2*k+1,2*k+1)/Omega;
+    (*B4)(2*k,2*k+1)=(*Q)(2*k+1,2*k)/Omega;
+
+
+
+  return;
+}
+
+void updaterkappas(NumericMatrix* Q,arma::mat* B2,arma::mat* B4,arma::mat* dwelltimes,int iteration,double Omega,NumericVector prior,int j) {
+
+  int i;
+  int j2;
+  int n = (*Q).nrow();
+  int k=n/2-1;
+  arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+  lambdas(0)=(*Q)(0,1);
+  lambdas(1)=(*Q)(1,0); 
+  arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) rkappas(i)=(*Q)(2*i,2*i+2);
+  arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) lkappas(i)=(*Q)(2*i+2,2*i);
+  arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+  gammas(0)=1;
+  for(i=1;i<=k;i++) gammas(i)=(*Q)(2*i,2*i+1)/lambdas(0);
+
+  arma::rowvec sojourntimes = arma::zeros<arma::rowvec>(n);
+  arma::rowvec transitioncounts = arma::zeros<arma::rowvec>(n*n);
+  
+  for(i=0;i<n;i++) sojourntimes(i)=(*dwelltimes)(iteration,i);
+  for(i=0;i<n;i++) for(j2=0;j2<n;j2++) transitioncounts(i*n+j2)=(*dwelltimes)(iteration,n+i*n+j2);
+
+  double alphaprime = prior(2)+transitioncounts((2*j)*n+2*j+2)+transitioncounts((2*j+1)*n+2*j+3);
+  double betaprime = prior(3)+sojourntimes(2*j)+sojourntimes(2*j+1);
+
+    double newrkappaj=::Rf_rgamma(alphaprime, 1/betaprime);
+    double logaccept = (newrkappaj-rkappas(j))*(sojourntimes(2*j)+sojourntimes(2*j+1));
+    if(j==0) logaccept=logaccept+transitioncounts((2*j)*n+2*j)*log((Omega-newrkappaj-gammas(j)*lambdas(0))/(Omega-rkappas(j)-gammas(j)*lambdas(0)));
+    if(j==0) logaccept=logaccept+transitioncounts((2*j+1)*n+2*j+1)*log((Omega-newrkappaj-gammas(j)*lambdas(1))/(Omega-rkappas(j)-gammas(j)*lambdas(1)));
+    if(j>0)  logaccept=logaccept+transitioncounts((2*j)*n+2*j)*log((Omega-lkappas(j-1)-newrkappaj-gammas(j)*lambdas(0))/(Omega-lkappas(j-1)-rkappas(j)-gammas(j)*lambdas(0)));
+    if(j>0)  logaccept=logaccept+transitioncounts((2*j+1)*n+2*j+1)*log((Omega-lkappas(j-1)-newrkappaj-gammas(j)*lambdas(1))/(Omega-lkappas(j-1)-rkappas(j)-gammas(j)*lambdas(1)));
+
+    double compare= as<double>(runif(1));
+
+    if(j==0) if(newrkappaj+gammas(j)*lambdas(0)>Omega) return;
+    if(j==0) if(newrkappaj+gammas(j)*lambdas(1)>Omega) return;
+    if(j>0)  if(newrkappaj+gammas(j)*lambdas(0)+lkappas(j-1)>Omega) return;
+    if(j>0)  if(newrkappaj+gammas(j)*lambdas(1)+lkappas(j-1)>Omega) return;
+    // the following line is wrong but we run up against machine precision otherwise...
+    if(newrkappaj<1e-300) return;
+
+    if(logaccept<log(compare)) return;
+
+
+    (*Q)(2*j,2*j+2)=newrkappaj;
+    (*Q)(2*j+1,2*j+3)=newrkappaj;
+    if(j==0) (*Q)(0,0)=-newrkappaj-gammas(j)*lambdas(0);
+    if(j==0) (*Q)(1,1)=-newrkappaj-gammas(j)*lambdas(1);
+    if(j>0)  (*Q)(2*j,2*j)=-newrkappaj-lkappas(j-1)-gammas(j)*lambdas(0);
+    if(j>0)  (*Q)(2*j+1,2*j+1)=-newrkappaj-lkappas(j-1)-gammas(j)*lambdas(1);
+
+    (*B2)(2*j,2*j)=1+(*Q)(2*j,2*j)/Omega;
+    (*B2)(2*j+1,2*j+1)=1+(*Q)(2*j+1,2*j+1)/Omega;
+    (*B2)(2*j,2*j+2)=(*Q)(2*j,2*j+2)/Omega;
+    (*B2)(2*j+1,2*j+3)=(*Q)(2*j+1,2*j+3)/Omega;
+
+    (*B4)(2*j,2*j)=1+(*Q)(2*j,2*j)/Omega;
+    (*B4)(2*j+1,2*j+1)=1+(*Q)(2*j+1,2*j+1)/Omega;
+    (*B4)(2*j+2,2*j)=(*Q)(2*j,2*j+2)/Omega;
+    (*B4)(2*j+3,2*j+1)=(*Q)(2*j+1,2*j+3)/Omega;
+  
+
+  return;
+}
+
+
+
+
+void updatelkappas(NumericMatrix* Q,arma::mat* B2,arma::mat* B4,arma::mat* dwelltimes,int iteration,double Omega,NumericVector prior,int j) {
+
+  int i;
+  int j2;
+  int n = (*Q).nrow();
+  int k=n/2-1;
+  arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+  lambdas(0)=(*Q)(0,1);
+  lambdas(1)=(*Q)(1,0); 
+  arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) rkappas(i)=(*Q)(2*i,2*i+2);
+  arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) lkappas(i)=(*Q)(2*i+2,2*i);
+  arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+  gammas(0)=1;
+  for(i=1;i<=k;i++) gammas(i)=(*Q)(2*i,2*i+1)/lambdas(0);
+
+  arma::rowvec sojourntimes = arma::zeros<arma::rowvec>(n);
+  arma::rowvec transitioncounts = arma::zeros<arma::rowvec>(n*n);
+  
+  for(i=0;i<n;i++) sojourntimes(i)=(*dwelltimes)(iteration,i);
+  for(i=0;i<n;i++) for(j2=0;j2<n;j2++) transitioncounts(i*n+j2)=(*dwelltimes)(iteration,n+i*n+j2);
+
+  double alphaprime = prior(2)+transitioncounts((2*j)*n+2*j-2)+transitioncounts((2*j+1)*n+2*j-1);
+  double betaprime = prior(3)+sojourntimes(2*j)+sojourntimes(2*j+1);
+
+    double newlkappaj=::Rf_rgamma(alphaprime, 1/betaprime);
+    double logaccept = (newlkappaj-lkappas(j-1))*(sojourntimes(2*j)+sojourntimes(2*j+1));
+    if(j==k) logaccept=logaccept+transitioncounts((2*j)*n+2*j)*log((Omega-newlkappaj-gammas(j)*lambdas(0))/(Omega-lkappas(j-1)-gammas(j)*lambdas(0)));
+    if(j==k) logaccept=logaccept+transitioncounts((2*j+1)*n+2*j+1)*log((Omega-newlkappaj-gammas(j)*lambdas(1))/(Omega-lkappas(j-1)-gammas(j)*lambdas(1)));
+    if(j<k)  logaccept=logaccept+transitioncounts((2*j)*n+2*j)*log((Omega-rkappas(j)-newlkappaj-gammas(j)*lambdas(0))/(Omega-rkappas(j)-lkappas(j-1)-gammas(j)*lambdas(0)));
+    if(j<k)  logaccept=logaccept+transitioncounts((2*j+1)*n+2*j+1)*log((Omega-rkappas(j)-newlkappaj-gammas(j)*lambdas(1))/(Omega-rkappas(j)-lkappas(j-1)-gammas(j)*lambdas(1)));
+ 
+    double compare= as<double>(runif(1));
+
+    if(j==k) if(newlkappaj+gammas(j)*lambdas(0)>Omega) return;
+    if(j==k) if(newlkappaj+gammas(j)*lambdas(1)>Omega) return;
+    if(j<k)  if(newlkappaj+gammas(j)*lambdas(0)+rkappas(j)>Omega) return;
+    if(j<k)  if(newlkappaj+gammas(j)*lambdas(1)+rkappas(j)>Omega) return;
+    // the following line is wrong but we run up against machine precision otherwise...
+    if(newlkappaj<1e-300) return;
+
+    if(logaccept<log(compare)) return;
+
+    (*Q)(2*j,2*j-2)=newlkappaj;
+    (*Q)(2*j+1,2*j-1)=newlkappaj;
+    if(j==k) (*Q)(2*j,2*j)=-newlkappaj-gammas(j)*lambdas(0);
+    if(j==k) (*Q)(2*j+1,2*j+1)=-newlkappaj-gammas(j)*lambdas(1);
+    if(j<k)  (*Q)(2*j,2*j)=-newlkappaj-rkappas(j)-gammas(j)*lambdas(0);
+    if(j<k)  (*Q)(2*j+1,2*j+1)=-newlkappaj-rkappas(j)-gammas(j)*lambdas(1);
+
+    (*B2)(2*j,2*j)=1+(*Q)(2*j,2*j)/Omega;
+    (*B2)(2*j+1,2*j+1)=1+(*Q)(2*j+1,2*j+1)/Omega;
+    (*B2)(2*j,2*j-2)=(*Q)(2*j,2*j-2)/Omega;
+    (*B2)(2*j+1,2*j-1)=(*Q)(2*j+1,2*j-1)/Omega;
+
+    (*B4)(2*j,2*j)=1+(*Q)(2*j,2*j)/Omega;
+    (*B4)(2*j+1,2*j+1)=1+(*Q)(2*j+1,2*j+1)/Omega;
+    (*B4)(2*j-2,2*j)=(*Q)(2*j,2*j-2)/Omega;
+    (*B4)(2*j-1,2*j+1)=(*Q)(2*j+1,2*j-1)/Omega;
+  
+
+  return;
+}
+
+
+
+void updategammas(NumericMatrix* Q,arma::mat* B2,arma::mat* B4,arma::mat* dwelltimes,int iteration,double Omega,NumericVector prior,int j) {
+
+  int i;
+  int j2;
+  int n = (*Q).nrow();
+  int k=n/2-1;
+  arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+  lambdas(0)=(*Q)(0,1);
+  lambdas(1)=(*Q)(1,0); 
+  arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) rkappas(i)=(*Q)(2*i,2*i+2);
+  arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) lkappas(i)=(*Q)(2*i+2,2*i);
+  arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+  gammas(0)=1;
+  for(i=1;i<=k;i++) gammas(i)=(*Q)(2*i,2*i+1)/lambdas(0);
+
+  arma::rowvec sojourntimes = arma::zeros<arma::rowvec>(n);
+  arma::rowvec transitioncounts = arma::zeros<arma::rowvec>(n*n);
+  
+  for(i=0;i<n;i++) sojourntimes(i)=(*dwelltimes)(iteration,i);
+  for(i=0;i<n;i++) for(j2=0;j2<n;j2++) transitioncounts(i*n+j2)=(*dwelltimes)(iteration,n+i*n+j2);
+
+  double alphaprime = prior(4)+transitioncounts((2*j)*n+2*j+1)+transitioncounts((2*j+1)*n+2*j);
+  double betaprime = prior(5)+sojourntimes(2*j)*lambdas(0)+sojourntimes(2*j+1)*lambdas(1);
+
+    double newgammaj=::Rf_rgamma(alphaprime, 1/betaprime);
+    double logaccept = (newgammaj-gammas(j))*(sojourntimes(2*j)*lambdas(0)+sojourntimes(2*j+1)*lambdas(1));
+    if(j==k) logaccept=logaccept+transitioncounts((2*j)*n+2*j)*log((Omega-lkappas(j-1)-newgammaj*lambdas(0))/(Omega-lkappas(j-1)-gammas(j)*lambdas(0)));
+    if(j==k) logaccept=logaccept+transitioncounts((2*j+1)*n+2*j+1)*log((Omega-lkappas(j-1)-newgammaj*lambdas(1))/(Omega-lkappas(j-1)-gammas(j)*lambdas(1)));
+    if(j<k)  logaccept=logaccept+transitioncounts((2*j)*n+2*j)*log((Omega-lkappas(j-1)-rkappas(j)-newgammaj*lambdas(0))/(Omega-rkappas(j)-lkappas(j-1)-gammas(j)*lambdas(0)));
+    if(j<k)  logaccept=logaccept+transitioncounts((2*j+1)*n+2*j+1)*log((Omega-lkappas(j-1)-rkappas(j)-newgammaj*lambdas(1))/(Omega-rkappas(j)-lkappas(j-1)-gammas(j)*lambdas(1)));
+ 
+    double compare= as<double>(runif(1));
+
+    if(j==k) if(lkappas(j-1)+newgammaj*lambdas(0)>Omega) return;
+    if(j==k) if(lkappas(j-1)+newgammaj*lambdas(1)>Omega) return;
+    if(j<k)  if(lkappas(j-1)+newgammaj*lambdas(0)+rkappas(j)>Omega) return;
+    if(j<k)  if(lkappas(j-1)+newgammaj*lambdas(1)+rkappas(j)>Omega) return;
+    // the following line is wrong but we run up against machine precision otherwise...
+    if(newgammaj<1e-300) return;
+
+    if(logaccept<log(compare)) return;
+
+
+    (*Q)(2*j,2*j+1)=newgammaj*lambdas(0);
+    (*Q)(2*j+1,2*j)=newgammaj*lambdas(1);
+    if(j==k) (*Q)(2*j,2*j)=-lkappas(j-1)-newgammaj*lambdas(0);
+    if(j==k) (*Q)(2*j+1,2*j+1)=-lkappas(j-1)-newgammaj*lambdas(1);
+    if(j<k)  (*Q)(2*j,2*j)=-lkappas(j-1)-rkappas(j)-newgammaj*lambdas(0);
+    if(j<k)  (*Q)(2*j+1,2*j+1)=-lkappas(j-1)-rkappas(j)-newgammaj*lambdas(1);
+
+    (*B2)(2*j,2*j)=1+(*Q)(2*j,2*j)/Omega;
+    (*B2)(2*j+1,2*j+1)=1+(*Q)(2*j+1,2*j+1)/Omega;
+    (*B2)(2*j,2*j+1)=(*Q)(2*j,2*j+1)/Omega;
+    (*B2)(2*j+1,2*j)=(*Q)(2*j+1,2*j)/Omega;
+
+    (*B4)(2*j,2*j)=1+(*Q)(2*j,2*j)/Omega;
+    (*B4)(2*j+1,2*j+1)=1+(*Q)(2*j+1,2*j+1)/Omega;
+    (*B4)(2*j+1,2*j)=(*Q)(2*j,2*j+1)/Omega;
+    (*B4)(2*j,2*j+1)=(*Q)(2*j+1,2*j)/Omega;
+
+
+  return;
+}
+
+
+void recordQks(NumericMatrix* Q,arma::mat* dwelltimes,int iteration,int n,int k) {
+  (*dwelltimes)(iteration,n+n*n)=(*Q)(0,1);
+  (*dwelltimes)(iteration,n+n*n+1)=(*Q)(1,0);
+  int i;
+  for(i=0;i<k;i++) (*dwelltimes)(iteration,n+n*n+2+i)=(*Q)(2*i,2*i+2);
+  for(i=0;i<k;i++) (*dwelltimes)(iteration,n+n*n+2+k+i)=(*Q)(2*i+2,2*i);
+  for(i=0;i<k;i++)(*dwelltimes)(iteration,n+n*n+2+2*k+i)=(*Q)(2*(i+1),2*(i+1)+1)/(*Q)(0,1);
+
+  return;
+}
+
+
+// [[Rcpp::export]]
+NumericMatrix maketreelistMCMCks(List& x,NumericMatrix& Q,NumericVector& pid,NumericMatrix& B,double Omega,IntegerVector& nen,IntegerVector& nodelist,int root,int N,NumericVector& prior) {
+
+  RNGScope scope;
+
+  int i;
+  List maps=x["maps"];
+  List mapnames=x["mapnames"];
+  const int branchcount = maps.size();
+  //Branch brancharray[branchcount];
+  std::vector<Branch> brancharray(branchcount);
+  for(i=0;i<maps.size();i++) brancharray[i] = makeabranch(maps(i),mapnames(i));
+  int branchnumber=mapnames.size();  
+
+ arma::imat edge =  as<arma::imat>(x["edge"]);
+ arma::irowvec edge1 = trans(edge.col(0));
+ arma::irowvec edge2 = trans(edge.col(1));
+ int Nnode = as<int>(x["Nnode"]);
+ 
+ int k=Q.nrow()/2-1;
+ arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+ lambdas(0)=Q(0,1);
+ lambdas(1)=Q(1,0); 
+ arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+ for(i=0;i<k;i++) rkappas(i)=Q(2*i,2*i+2);
+ arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+ for(i=0;i<k;i++) lkappas(i)=Q(2*i+2,2*i);
+ arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+ gammas(0)=1;
+ for(i=1;i<=k;i++) gammas(i)=Q(2*i,2*i+1)/lambdas(0);
+
+  arma::imat nodestatesmatrix=as<arma::imat>(x["node.states"]);
+  arma::irowvec states = as<arma::irowvec>(x["states"]);
+
+  arma::mat PL((2*Nnode+1),Q.nrow());
+  PL.zeros();
+  int j;
+   for(i=0;i<states.size();i++) {
+     if((states(i)-2*floor(states(i)/2))==0) {
+       for(j=1;j<Q.nrow();j=j+2) PL(i,j) = 1;
+     }
+     if((states(i)-2*floor(states(i)/2))==1) {
+       for(j=0;j<Q.nrow();j=j+2) PL(i,j) = 1;
+     }
+    }
+
+  int n = B.nrow();
+  arma::mat B2(B.begin(),n,n,false);
+  arma::mat B4=trans(B2);
+  
+  arma::rowvec rootdist =as<arma::rowvec>(pid);
+  arma::irowvec ne=as<arma::irowvec>(nen);
+
+  List w = x;
+  List ret;
+
+  arma::mat dwelltimes=arma::zeros<arma::mat>(N,n+n*n+2+3*k+1);
+
+  for(i=0;i<N;i++){
+    recordQks(&Q,&dwelltimes,i,n,k);
+    treesampleks(&Q,&rootdist,&B2,&B4,Omega,&ne,&brancharray,branchnumber,&nodestatesmatrix,&dwelltimes,root,&PL,nodelist,i,N,&states,&edge,&edge1,&edge2,Nnode);
+    updateksl01(&Q,&B2,&B4,&dwelltimes,i,Omega,prior);
+    updateksl10(&Q,&B2,&B4,&dwelltimes,i,Omega,prior);
+    for(j=0;j<k;j++)  updaterkappas(&Q,&B2,&B4,&dwelltimes,i,Omega,prior,j);
+    for(j=1;j<=k;j++) updatelkappas(&Q,&B2,&B4,&dwelltimes,i,Omega,prior,j);
+    for(j=1;j<=k;j++) updategammas(&Q,&B2,&B4,&dwelltimes,i,Omega,prior,j);
+    printf("%i \r",i);
+  }
+
+  return wrap(dwelltimes);
+
+}
 
 
 
