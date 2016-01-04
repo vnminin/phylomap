@@ -1724,6 +1724,500 @@ NumericMatrix maketreelistMCMCks(List& x,NumericMatrix& Q,NumericVector& pid,Num
 }
 
 
+//////////////////////////////////////// Rate Matrix Updated ////////////////////////////////////////////////////////////
+////////////////////////////////////////   Multiple Trees    ////////////////////////////////////////////////////////////
+////////////////////////////////////////     2 state         ////////////////////////////////////////////////////////////
+
+
+// shortener removes self transitions from a Branch
+void shortenermtNS(Branch *branch,arma::rowvec* jodt,int ss) {
+
+  std::list<double>::iterator bit, bit2;
+  bit = ((*branch).branch).begin();
+  std::list<int>::iterator nit,nit2;
+  nit = ((*branch).names).begin();
+  int i;
+  int n=((*branch).branch).size();
+
+  //
+  nit = ((*branch).names).begin();
+  nit2 = ((*branch).names).begin();
+  ++nit2;
+  n=((*branch).branch).size();
+  for(i=1;i<n;i++) {
+    (*jodt)(ss+(*nit)*ss+(*nit2))+=1;
+    ++nit;
+    ++nit2;
+  }
+  //
+
+  nit = ((*branch).names).begin();
+  bit = ((*branch).branch).begin();
+  for(i=0;i<(n-1);i++) {
+    nit2=nit;bit2=bit;++nit2;++bit2;
+    if((*nit)!=(*nit2)) {++nit;++bit;} else {
+      (*bit)=(*bit)+(*bit2);
+      deletebranchjump(branch,bit2,nit2);
+    }
+  }
+
+  return;
+}
+
+
+
+
+void updatenodestatesmt(arma::irowvec nodestates,int wt,std::vector< std::vector<Branch> >* BranchArray,std::vector< arma::imat >* Edge,std::vector< arma::imat >* NodeStatesMatrix) {
+  std::list<int>::iterator nit;
+  int numedge = ((*Edge)[wt]).n_rows;
+  for(int i=0;i<numedge;i++) {
+    //nodestatesmatrix starts the state space at 1
+    ((*NodeStatesMatrix)[wt])(i,0)=nodestates(((*Edge)[wt])(i,0)-1);
+    ((*NodeStatesMatrix)[wt])(i,1)=nodestates(((*Edge)[wt])(i,1)-1);
+    //brancharray starts the state space at 0
+    nit = (((*BranchArray)[wt])[i]).names.begin();
+    (*nit)=(nodestates(((*Edge)[wt])(i,0)-1)-1);
+    nit = (((*BranchArray)[wt])[i]).names.end();
+    --nit;
+    (*nit)=(nodestates(((*Edge)[wt])(i,1)-1)-1);
+  }
+
+
+  return;
+}
+
+
+void makePLrcppmt(int Nnode,arma::mat* B2,arma::irowvec branchlengths,int wt,std::vector< arma::irowvec >* Edge1,std::vector< arma::irowvec >* Edge2,std::vector< arma::mat >* PartialLikelihood,arma::imat* ne_m){
+ arma::vec first;
+ arma::vec second;
+ for(int i=0;i<Nnode;i++) {
+   first=trans(((*PartialLikelihood)[wt]).row(((*Edge2)[wt])(((*ne_m).row(wt))(2*i+1)-1)-1));
+   second=trans(((*PartialLikelihood)[wt]).row(((*Edge2)[wt])(((*ne_m).row(wt))(2*i)-1)-1));
+   ((*PartialLikelihood)[wt]).row(((*Edge1)[wt])(((*ne_m).row(wt))(2*i)-1)-1)=trans(mmmmvFORpl(B2,&first,branchlengths(((*ne_m).row(wt))(2*i+1)-1)-1)%mmmmvFORpl(B2,&second,branchlengths(((*ne_m).row(wt))(2*i)-1)-1));
+
+ }
+
+ return;
+}
+
+
+arma::irowvec sampleinternalnodesMCMCmt(int branchnumber,arma::rowvec* pid,arma::mat* B2,arma::mat* B4,int root,int Nnode,int wt,std::vector< std::vector<Branch> >* BranchArray,std::vector< arma::mat >* PartialLikelihood,IntegerMatrix* nodelist_m,arma::imat* ne_m,std::vector< arma::imat >* Edge,std::vector< arma::irowvec >* Edge1,std::vector< arma::irowvec >* Edge2,std::vector< arma::irowvec >* States) {
+
+  RNGScope scope;
+ 
+  int i;
+  int j;
+
+  arma::irowvec branchlengths=arma::zeros<arma::irowvec>(branchnumber);
+  for(i=0;i<branchnumber;i++) branchlengths(i)=(((*BranchArray)[wt])[i]).names.size();
+
+  int n = (*B2).n_rows;
+
+  // states: vector containing tip node states
+  // sss: number of tips
+  //int sss=(*states).size(); 
+  int sss=((*States)[wt]).size(); 
+
+  // edge: matrix containing parent labels (column 1) and child labels (column 2) for each edge (row)
+  // arma::imat edge = as<arma::imat>(xtree["edge"]);
+
+  // rm: vector to be returned, containing the states of all the nodes (tip nodes included)
+  arma::irowvec rm=arma::zeros<arma::irowvec>(2*sss-1);
+  // tip states remain unchanged
+  for(i=0;i<sss;i++) rm(i)=((*States)[wt])(i)-1;
+  // pid: the probability vector for states at the root
+  // PL is the partial likelihood matrix, it the probability of the observed tip states under each node (row) assuming that node is in: state 1 (column 1), state 2 (column 2), ...
+  makePLrcppmt(Nnode,B2,branchlengths,wt,Edge1,Edge2,PartialLikelihood,ne_m); 
+  // covec is proportional to the vector of probabilities, Pr(root|tip states)
+  arma::rowvec covec = (*pid)%((*PartialLikelihood)[wt]).row(root-1);
+  // tops is a NumericVector version of covec
+  NumericVector tops(n);
+  for(i=0;i<n;i++) tops(i)= covec(i);
+  // sts is a vector of state names from 0 to n-1
+  IntegerVector sts(n);
+  sts(0)=0;
+  for(i=1;i<n;i++) sts(i)=sts(i-1)+1;
+  // sample the root state, armadillo's sample function requires a NumericVector of probabilities
+  rm(root-1)=as<int>(RcppArmadillo::sample(sts,1,1,tops));
+  //arma::rowvec vecc = arma::zeros<arma::rowvec>(n);
+  arma::vec vecc = arma::zeros<arma::vec>(n);
+  NumericVector veccer(n);
+
+  int cn;
+  int pn;
+  int ps;
+  int ae;
+
+  int nll = ((*nodelist_m).row(wt)).size();
+  if(nll>0) {  
+    // sample a state for each (non-root) internal node starting below the root and working down
+    for(i=0;i<nll;i++) {
+      //cn=nodelist(i)-1; //child node
+      cn=(*nodelist_m)(wt,i)-1; //child node
+
+      j=0;
+      //while((*edge)(j,1)!=nodelist(i)) j++;
+      while(((*Edge)[wt])(j,1)!=(*nodelist_m)(wt,i)) j++;
+
+      //pn = (*edge)(j,0)-1; //parent node
+      pn = ((*Edge)[wt])(j,0)-1; //parent node
+
+      ps = rm(pn); //parent state
+      ae = j; //appropriate edge
+
+      // (probability of transitioning from parent state to child state) * (probability of tips below child | child state)
+      vecc = arma::zeros<arma::vec>(n);
+      vecc(ps) = 1;
+      vecc = Tvmmp(B4,vecc,branchlengths(ae)-1)%trans(((*PartialLikelihood)[wt]).row(cn));
+
+      // armadillo sample needs a NumericVector
+      for(j=0;j<n;j++) veccer(j)=vecc(j);
+      rm(cn)=as<int>(RcppArmadillo::sample(sts,1,1,veccer));
+    }
+  }
+
+  // update tip node states - they don't actually remain the same anymore
+  for(i=0;i<((*Edge2)[wt]).size();i++){
+    if(((*Edge)[wt])(i,1)<=sss) {
+      cn=((*Edge)[wt])(i,1)-1;
+      pn=((*Edge)[wt])(i,0)-1;
+      ps = rm(pn);
+      ae = i;
+      vecc = arma::zeros<arma::vec>(n);
+      vecc(ps) = 1;
+      vecc = Tvmmp(B4,vecc,branchlengths(ae)-1)%trans(((*PartialLikelihood)[wt]).row(cn));
+      for(j=0;j<n;j++) veccer(j)=vecc(j);
+      rm(cn)=as<int>(RcppArmadillo::sample(sts,1,1,veccer));
+    }
+  }
+  //
+
+  for(i=0;i<(2*sss-1);i++) rm(i)=rm(i)+1;
+  return rm;
+
+}
+
+
+// resamplebranchstates resamples states given exisiting transitions and the states at either end
+void resamplebranchstatesmt(Branch *branch,arma::mat* B2) {
+
+  // ss is the number of segments on the branch
+  int ss=((*branch).branch).size();
+  // if a branch only has 1 or 2 states there is nothing to be done
+  if(ss==1){return;}
+  if(ss==2){return;}
+  // n is the total number of states
+  int n = (*B2).n_rows;
+  
+  // vec starts off as a vector of zeros with a 1 in the position corresponding to the state at the end of the branch
+  arma::colvec vec(n);
+  vec.zeros();
+  std::list<int>::iterator nit;
+  nit = (*branch).names.end();
+  --nit;
+  vec(*nit)=1;
+
+  // bpws is a matrix, column i will represent B^i %*% vec
+  arma::mat bpws(n,ss);
+  bpws.zeros();
+  bpws.col(0)=vec;
+
+  int i;
+  int j;
+
+  for(j=1;j<(ss-1);j++) bpws.col(j)=(*B2)*bpws.col(j-1);
+
+ 
+  IntegerVector sts(n);
+  sts(0)=0;
+  for(i=1;i<n;i++) sts(i)=sts(i-1)+1;
+  NumericVector prob(n);
+  arma::mat top = arma::ones<arma::mat>(1,n);
+  NumericVector tops(n);
+  nit = (*branch).names.begin();
+  for(i=1;i<(ss-1);i++) {
+    top.row(0) = ((*B2).row(*nit)%bpws.col(ss-i-1).t());
+    ++nit;
+    for(j=0;j<n;j++) tops(j)=top(0,j);  
+    *nit = as<int>(RcppArmadillo::sample(sts,1,1,tops));
+  }
+
+  return;
+}
+
+
+void sampleabranchmtNS(Branch *branch,arma::mat* B2,double Omega,NumericMatrix* Q,arma::rowvec* jodt,int statesize) {
+ RNGScope scope;
+
+  std::list<double>::iterator bit;
+  std::list<int>::iterator nit;
+
+  resamplebranchstatesmt(branch,B2);
+  shortenermtNS(branch,jodt,statesize);
+
+  int i;
+  int k;
+  int s;
+   
+  // n is the number of segments on the branch
+  int n = ((*branch).names).size();
+  bit = (*branch).branch.begin();
+  nit = (*branch).names.begin();
+  double segmentlength;
+  double totallengthinserted;
+  double rl;
+  double r;
+  for(i=0;i<n;i++) {
+    segmentlength=(*bit);
+    totallengthinserted=0;
+    s=*nit;
+    r=Omega+(*Q)(s,s);
+    rl=0;
+    while(totallengthinserted<segmentlength) {
+     rl=as<double>(rexp(1,r));
+     if((totallengthinserted+rl)<segmentlength) {
+      (*branch).branch.insert(bit,rl);
+      totallengthinserted+=rl;
+      (*branch).names.insert(nit,s);
+     } else {
+      (*branch).branch.insert(bit,segmentlength-totallengthinserted);
+      bit=(*branch).branch.erase(bit);
+      ++nit;
+      totallengthinserted=segmentlength;
+     }
+    }
+  }
+  
+  return;
+}
+
+void updatedwelltimesmtNS(Branch* branch,arma::rowvec* jodt) {
+  std::list<int>::iterator nit;
+  std::list<double>::iterator bit;
+  nit=(*branch).names.begin();
+  bit=(*branch).branch.begin();
+  // i tracks which segment we are in
+  for(int i=0;i<(*branch).names.size();i++) {
+    (*jodt)(*nit)+=*bit;
+    ++nit;
+    ++bit;
+  }
+  return;
+}
+
+
+void treesamplemtNS(NumericMatrix* Q,arma::rowvec* pid,arma::mat* B2,arma::mat* B4,double Omega,int branchnumber,int root,int N,int Nnode,int wt, arma::imat* ne_m,std::vector< std::vector<Branch> >* BranchArray,std::vector< arma::imat >* NodeStatesMatrix,std::vector< arma::rowvec >* DwellTimes,std::vector< arma::mat >* PartialLikelihood,IntegerMatrix* nodelist_m,std::vector< arma::irowvec >* States,std::vector< arma::imat >* Edge,std::vector< arma::irowvec >* Edge1,std::vector< arma::irowvec >* Edge2) {
+RNGScope scope;
+ 
+  int i;
+  updatenodestatesmt(sampleinternalnodesMCMCmt(branchnumber,pid,B2,B4,root,Nnode,wt,BranchArray,PartialLikelihood,nodelist_m,ne_m,Edge,Edge1,Edge2,States),wt,BranchArray,Edge,NodeStatesMatrix);
+  // for each branch, resample segmental states
+  for(i=0;i<branchnumber;i++) sampleabranchmtNS(&(((*BranchArray)[wt])[i]),B2,Omega,Q,&((*DwellTimes)[wt]),(*Q).nrow());
+  for(i=0;i<branchnumber;i++) updatedwelltimesmtNS(&(((*BranchArray)[wt])[i]),&((*DwellTimes)[wt]));
+
+  return;
+}
+
+void recordQmtNS(NumericMatrix* Q,arma::rowvec* jodt) {
+  (*jodt)(6)=(*Q)(0,1);
+  (*jodt)(7)=(*Q)(1,0);
+  return;
+}
+
+
+double metropolis(double l01,double l10,int n00,int n01, int n10,int n11,double Omega,double t0,double t1,NumericVector prior,double newl01,double newl10) {
+  double rm=1;
+  rm=rm*exp(-Omega*(t0+t1))*pow((Omega-newl01),n00)*pow((Omega-newl10),n11)*pow(newl01,n01)*pow(newl10,n10);
+  rm=rm*exp(::Rf_dgamma(newl01,prior(0), 1/prior(1), 1))*exp(::Rf_dgamma(newl10,prior(2), 1/prior(3), 1));
+  rm=rm/(exp(-Omega*(t0+t1))*pow((Omega-l01),n00)*pow((Omega-l10),n11)*pow(l01,n01)*pow(l10,n10));
+  rm=rm/(exp(::Rf_dgamma(l01,prior(0), 1/prior(1), 1))*exp(::Rf_dgamma(l10,prior(2), 1/prior(3), 1)));
+  return(rm);
+}
+
+double hastings(double l01,double l10,int n00,int n01, int n10,int n11,double Omega,double t0,double t1,NumericVector prior,double newl01,double newl10) {
+  double rm=1;
+  rm=rm*exp(::Rf_dgamma(l01,prior(0)+n01, 1/(prior(1)+t0), 1))/exp(::Rf_dgamma(newl01,prior(0)+n01, 1/(prior(1)+t0), 1));
+  rm=rm*exp(::Rf_dgamma(l10,prior(2)+n10, 1/(prior(3)+t1), 1))/exp(::Rf_dgamma(newl10,prior(2)+n10, 1/(prior(3)+t1), 1));
+  return(rm);
+}
+
+void updatel01mtNS(NumericMatrix* Q,arma::mat* B2,arma::mat* B4,arma::rowvec* jodt,double Omega,NumericVector prior) {
+
+    int n00=(*jodt)(2);
+    int n01=(*jodt)(3);
+    double t0=(*jodt)(0);
+    double l01=(*Q)(0,1);
+   
+    int n10=(*jodt)(4);
+    int n11=(*jodt)(5);
+    double t1=(*jodt)(1);
+    double l10=(*Q)(1,0);
+
+    double newl01=::Rf_rgamma(prior(0)+n01, 1/(prior(1)+t0));
+    double newl10=l10;
+
+    if(newl01>Omega) return;
+
+    double accept=pow((Omega-newl01)/(Omega-l01),n00)*exp(t0*(newl01-l01));
+    double acceptcompare=metropolis(l01,l10,n00,n01,n10,n11,Omega,t0,t1,prior,newl01,newl10)*hastings(l01,l10,n00,n01,n10,n11,Omega,t0,t1,prior,newl01,newl10);
+
+    if(accept>1) accept=1;
+    double compare= as<double>(runif(1));
+  
+    if(accept<compare) return;
+    
+
+    (*Q)(0,0)=-newl01;
+    (*Q)(0,1)=newl01;
+    (*B2)(0,0)=1-newl01/Omega;
+    (*B2)(0,1)=newl01/Omega;
+    (*B4)(0,0)=1-newl01/Omega;
+    (*B4)(1,0)=newl01/Omega;
+
+  return;
+}
+
+void updatel10mtNS(NumericMatrix* Q,arma::mat* B2,arma::mat* B4,arma::rowvec* jodt,double Omega,NumericVector prior) {
+  
+    int n00=(*jodt)(2);
+    int n01=(*jodt)(3);
+    double t0=(*jodt)(0);
+    double l01=(*Q)(0,1);
+   
+    int n10=(*jodt)(4);
+    int n11=(*jodt)(5);
+    double t1=(*jodt)(1);
+    double l10=(*Q)(1,0);
+
+    double newl01=l01;
+    double newl10=::Rf_rgamma(prior(2)+n10, 1/(prior(3)+t1));
+
+    if(newl10>Omega) return;
+
+    double accept=pow((Omega-newl10)/(Omega-l10),n11)*exp(t1*(newl10-l10));
+    double acceptcompare=metropolis(l01,l10,n00,n01,n10,n11,Omega,t0,t1,prior,newl01,newl10)*hastings(l01,l10,n00,n01,n10,n11,Omega,t0,t1,prior,newl01,newl10);
+  
+    if(accept>1) accept=1;
+    double compare= as<double>(runif(1));
+
+    if(accept<compare) return;
+    
+
+    (*Q)(1,0)=newl10;
+    (*Q)(1,1)=-newl10;
+    (*B2)(1,0)=newl10/Omega;
+    (*B2)(1,1)=1-newl10/Omega;
+    (*B4)(0,1)=newl10/Omega;
+    (*B4)(1,1)=1-newl10/Omega;
+
+  return;
+}
+
+
+
+// [[Rcpp::export]]
+NumericMatrix maketreelistMCMCmt(List& x,NumericMatrix& Q,NumericVector& pid,NumericMatrix& B,double Omega,IntegerMatrix& nen,IntegerMatrix& nodelist_m,IntegerVector roots,int N,NumericVector& prior) {
+
+  RNGScope scope;
+
+  int i;
+  int j;
+  int k;
+  int treecount=x.size();
+
+
+  List test=x[0];
+  int Nnode = as<int>(test["Nnode"]);
+  List maps=test["maps"];
+  List mapnames=test["mapnames"];
+  arma::imat edge =  as<arma::imat>(test["edge"]);
+  arma::irowvec edge1 = trans(edge.col(0));
+  arma::irowvec edge2 = trans(edge.col(1));
+  arma::imat nodestatesmatrix=as<arma::imat>(test["node.states"]);
+  arma::irowvec states = as<arma::irowvec>(test["states"]);
+  arma::mat PL((2*Nnode+1),Q.nrow());
+
+  const int branchcount = maps.size();
+  std::vector<Branch> brancharray(branchcount);
+
+  std::vector< std::vector<Branch> > BranchArray(treecount);
+  std::vector< arma::imat > Edge(treecount);
+  std::vector< arma::irowvec > Edge1(treecount);
+  std::vector< arma::irowvec > Edge2(treecount);
+  std::vector< arma::imat > NodeStatesMatrix(treecount);
+  std::vector< arma::irowvec > States(treecount);
+  std::vector< arma::mat > PartialLikelihood(treecount);
+
+  for(i=0;i<treecount;i++) {
+   test=x[i];
+   maps=test["maps"];
+   mapnames=test["mapnames"];
+   for(j=0;j<branchcount;j++) brancharray[j] = makeabranch(maps(j),mapnames(j));
+   BranchArray[i]=brancharray;
+   Edge[i]=as<arma::imat>(test["edge"]);
+   Edge1[i]=trans((Edge[i]).col(0));
+   Edge2[i]=trans((Edge[i]).col(1));
+   nodestatesmatrix=as<arma::imat>(test["node.states"]);
+   NodeStatesMatrix[i]=nodestatesmatrix;
+   states = as<arma::irowvec>(test["states"]);
+   States[i]=states;
+   PL.zeros();
+   for(j=0;j<states.size();j++) PL(j,states(j)-1) = 1;
+   PartialLikelihood[i]=PL;
+  }
+ 
+
+  int n = B.nrow();
+  arma::mat B2(B.begin(),n,n,false);
+  arma::mat B4=trans(B2);
+  
+  arma::rowvec rootdist =as<arma::rowvec>(pid);
+  arma::imat ne_m=as<arma::imat>(nen);
+
+  List ret;
+
+  arma::rowvec jodt(n+n*n+2);
+  std::vector< arma::rowvec > DwellTimes(treecount);
+  for(i=0;i<treecount;i++) DwellTimes[i]=jodt;
+
+  // which tree should we use next
+  double wt = as<double>(runif(1));
+  arma::colvec weights(treecount);
+  weights.ones();
+
+  // to be returned matrix
+  arma::mat tbr=arma::zeros<arma::mat>(N,n+n*n+2+1);
+
+  for(i=0;i<N;i++){
+
+    for(j=0;j<treecount;j++) {
+      (DwellTimes[j]).zeros();
+      recordQmtNS(&Q,&(DwellTimes[j]));
+      treesamplemtNS(&Q,&rootdist,&B2,&B4,Omega,branchcount,roots[j],N,Nnode,j,&ne_m,&BranchArray,&NodeStatesMatrix,&DwellTimes,&PartialLikelihood,&nodelist_m,&States,&Edge,&Edge1,&Edge2);
+    }
+
+    wt = as<double>(runif(1));
+    j=sampleOnce(weights,wt);
+
+    for(k=0;k<n+n*n+2;k++) tbr(i,k)=(DwellTimes[j])(k);
+    tbr(i,n+n*n+2)=j;
+
+    updatel01mtNS(&Q,&B2,&B4,&(DwellTimes[j]),Omega,prior);
+    updatel10mtNS(&Q,&B2,&B4,&(DwellTimes[j]),Omega,prior);
+
+    printf("%i \r",i);
+  }
+		       				       
+
+  return wrap(tbr);
+
+}
+
+
+
+
+
+
 
 
 

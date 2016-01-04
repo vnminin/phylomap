@@ -24,3 +24,12 @@ maketreelistMCMCbf <- function(x,Q,pid,B,Omega,nen,nodelist,root,N,prior) {
 maketreelistMCMCks <- function(x,Q,pid,B,Omega,nen,nodelist,root,N,prior) {
     .Call('phylomap_maketreelistMCMCks', PACKAGE = 'phylomap', x,Q,pid,B,Omega,nen,nodelist,root,N,prior)
 }
+
+#
+# rate matrix uncertain and multiple trees
+#
+
+maketreelistMCMCmt <- function(x,Q,pid,B,Omega,nen_m,nodelist_m,roots,N,prior) {
+    .Call('phylomap_maketreelistMCMCmt', PACKAGE = 'phylomap', x,Q,pid,B,Omega,nen_m,nodelist_m,roots,N,prior)
+}
+
