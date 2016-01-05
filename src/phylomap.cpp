@@ -2213,6 +2213,499 @@ NumericMatrix maketreelistMCMCmt(List& x,NumericMatrix& Q,NumericVector& pid,Num
 
 }
 
+//////////////////////////////////////// Rate Matrix Updated ////////////////////////////////////////////////////////////
+////////////////////////////////////////   Multiple Trees    ////////////////////////////////////////////////////////////
+////////////////////////////////////////     k state         ////////////////////////////////////////////////////////////
+
+
+
+
+void updateksl01mt(NumericMatrix* Q,arma::mat* B2,arma::mat* B4,arma::rowvec* jodt,double Omega,NumericVector prior) {
+
+  int i;
+  int j;
+  int n = (*Q).nrow();
+  int k=n/2-1;
+  arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+  lambdas(0)=(*Q)(0,1);
+  lambdas(1)=(*Q)(1,0); 
+  arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) rkappas(i)=(*Q)(2*i,2*i+2);
+  arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) lkappas(i)=(*Q)(2*i+2,2*i);
+  arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+  gammas(0)=1;
+  for(i=1;i<=k;i++) gammas(i)=(*Q)(2*i,2*i+1)/lambdas(0);
+  
+  arma::rowvec sojourntimes = arma::zeros<arma::rowvec>(n);
+  arma::rowvec transitioncounts = arma::zeros<arma::rowvec>(n*n);
+    
+  for(i=0;i<n;i++) sojourntimes(i)=(*jodt)(i);
+  for(i=0;i<n;i++) for(j=0;j<n;j++) transitioncounts(i*n+j)=(*jodt)(n+i*n+j);
+  
+  double alphaprime = prior(0);
+  for(i=0;i<=k;i++) alphaprime=alphaprime+transitioncounts(2*i*n+2*i+1);
+  double betaprime = prior(1);
+  for(i=0;i<=k;i++) betaprime=betaprime+gammas(i)*sojourntimes(2*i);
+  
+    double newl01=::Rf_rgamma(alphaprime, 1/betaprime);
+  
+    double gammatimes=betaprime-prior(1);
+    double logaccept = (newl01-lambdas(0))*gammatimes;
+    logaccept=logaccept+transitioncounts(0)*log((Omega-rkappas(0)-gammas(0)*newl01)/(Omega-rkappas(0)-gammas(0)*lambdas(0)));
+    for(i=1;i<k;i++) logaccept=logaccept+transitioncounts(2*i*n+2*i)*log((Omega-rkappas(i)-lkappas(i-1)-gammas(i)*newl01)/(Omega-rkappas(i)-lkappas(i-1)-gammas(i)*lambdas(0)));
+    logaccept=logaccept+transitioncounts(2*k*n+2*k)*log((Omega-lkappas(k-1)-gammas(k)*newl01)/(Omega-lkappas(k-1)-gammas(k)*lambdas(0)));
+  
+    double compare= as<double>(runif(1));
+
+    if(newl01+rkappas(0)>Omega) return;
+    for(i=1;i<k;i++) if(gammas(i)*newl01+rkappas(i)+lkappas(i-1)>Omega) return;
+    if(gammas(k)*newl01+lkappas(k-1)>Omega) return;
+ 
+    if(logaccept<log(compare)) return;
+
+    (*Q)(0,0)=-rkappas(0)-gammas(0)*newl01;
+    (*Q)(0,1)=gammas(0)*newl01;
+    (*B2)(0,0)=1+(*Q)(0,0)/Omega;
+    (*B2)(0,1)=(*Q)(0,1)/Omega;
+    (*B4)(0,0)=1+(*Q)(0,0)/Omega;
+    (*B4)(1,0)=(*Q)(0,1)/Omega;
+
+    for(i=1;i<k;i++) {
+      (*Q)(2*i,2*i)=-lkappas(i-1)-rkappas(i)-gammas(i)*newl01;
+      (*Q)(2*i,2*i+1)=gammas(i)*newl01;
+      (*B2)(2*i,2*i)=1+(*Q)(2*i,2*i)/Omega;
+      (*B2)(2*i,2*i+1)=(*Q)(2*i,2*i+1)/Omega;
+      (*B4)(2*i,2*i)=1+(*Q)(2*i,2*i)/Omega;
+      (*B4)(2*i+1,2*i)=(*Q)(2*i,2*i+1)/Omega;
+    }
+
+    (*Q)(2*k,2*k)=-lkappas(k-1)-gammas(k)*newl01;
+    (*Q)(2*k,2*k+1)=gammas(k)*newl01;
+    (*B2)(2*k,2*k)=1+(*Q)(2*k,2*k)/Omega;
+    (*B2)(2*k,2*k+1)=(*Q)(2*k,2*k+1)/Omega;
+    (*B4)(2*k,2*k)=1+(*Q)(2*k,2*k)/Omega;
+    (*B4)(2*k+1,2*k)=(*Q)(2*k,2*k+1)/Omega;
+  
+  return;
+}
+
+
+
+void updateksl10mt(NumericMatrix* Q,arma::mat* B2,arma::mat* B4,arma::rowvec* jodt,double Omega,NumericVector prior) {
+
+  int i;
+  int j;
+  int n = (*Q).nrow();
+  int k=n/2-1;
+  arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+  lambdas(0)=(*Q)(0,1);
+  lambdas(1)=(*Q)(1,0); 
+  arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) rkappas(i)=(*Q)(2*i,2*i+2);
+  arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) lkappas(i)=(*Q)(2*i+2,2*i);
+  arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+  gammas(0)=1;
+  for(i=1;i<=k;i++) gammas(i)=(*Q)(2*i,2*i+1)/lambdas(0);
+
+  arma::rowvec sojourntimes = arma::zeros<arma::rowvec>(n);
+  arma::rowvec transitioncounts = arma::zeros<arma::rowvec>(n*n);
+  
+  for(i=0;i<n;i++) sojourntimes(i)=(*jodt)(i);
+  for(i=0;i<n;i++) for(j=0;j<n;j++) transitioncounts(i*n+j)=(*jodt)(n+i*n+j);
+
+  double alphaprime = prior(2);
+  for(i=0;i<=k;i++) alphaprime=alphaprime+transitioncounts((2*i+1)*n+2*i);
+  double betaprime = prior(3);
+  for(i=0;i<=k;i++) betaprime=betaprime+gammas(i)*sojourntimes(2*i+1);
+
+    double newl10=::Rf_rgamma(alphaprime, 1/betaprime);
+    double gammatimes=betaprime-prior(1);
+    double logaccept = (newl10-lambdas(1))*gammatimes;
+    logaccept=logaccept+transitioncounts(n+1)*log((Omega-rkappas(0)-gammas(0)*newl10)/(Omega-rkappas(0)-gammas(0)*lambdas(1)));
+    for(i=1;i<k;i++) logaccept=logaccept+transitioncounts((2*i+1)*n+2*i+1)*log((Omega-rkappas(i)-lkappas(i-1)-gammas(i)*newl10)/(Omega-rkappas(i)-lkappas(i-1)-gammas(i)*lambdas(1)));
+    logaccept=logaccept+transitioncounts((2*k+1)*n+2*k+1)*log((Omega-lkappas(k-1)-gammas(k)*newl10)/(Omega-lkappas(k-1)-gammas(k)*lambdas(1)));
+
+    double compare= as<double>(runif(1));
+
+    if(newl10+rkappas(0)>Omega) return;
+    for(i=1;i<k;i++) if(gammas(i)*newl10+rkappas(i)+lkappas(i-1)>Omega) return;
+    if(gammas(k)*newl10+lkappas(k-1)>Omega) return;
+
+    if(logaccept<log(compare)) return;
+
+    (*Q)(1,1)=-rkappas(0)-gammas(0)*newl10;
+    (*Q)(1,0)=gammas(0)*newl10;
+    (*B2)(1,1)=1+(*Q)(1,1)/Omega;
+    (*B2)(1,0)=(*Q)(1,0)/Omega;
+    (*B4)(1,1)=1+(*Q)(1,1)/Omega;
+    (*B4)(0,1)=(*Q)(1,0)/Omega;
+
+    for(i=1;i<k;i++) {
+      (*Q)(2*i+1,2*i+1)=-lkappas(i-1)-rkappas(i)-gammas(i)*newl10;
+      (*Q)(2*i+1,2*i)=gammas(i)*newl10;
+      (*B2)(2*i+1,2*i+1)=1+(*Q)(2*i+1,2*i+1)/Omega;
+      (*B2)(2*i+1,2*i)=(*Q)(2*i+1,2*i)/Omega;
+      (*B4)(2*i+1,2*i+1)=1+(*Q)(2*i+1,2*i+1)/Omega;
+      (*B4)(2*i,2*i+1)=(*Q)(2*i+1,2*i)/Omega;
+    }
+
+    (*Q)(2*k+1,2*k+1)=-lkappas(k-1)-gammas(k)*newl10;
+    (*Q)(2*k+1,2*k)=gammas(k)*newl10;
+    (*B2)(2*k+1,2*k+1)=1+(*Q)(2*k+1,2*k+1)/Omega;
+    (*B2)(2*k+1,2*k)=(*Q)(2*k+1,2*k)/Omega;
+    (*B4)(2*k+1,2*k+1)=1+(*Q)(2*k+1,2*k+1)/Omega;
+    (*B4)(2*k,2*k+1)=(*Q)(2*k+1,2*k)/Omega;
+
+  return;
+}
+
+
+
+void updaterkappasmt(NumericMatrix* Q,arma::mat* B2,arma::mat* B4,arma::rowvec* jodt,double Omega,NumericVector prior,int j) {
+
+  int i;
+  int j2;
+  int n = (*Q).nrow();
+  int k=n/2-1;
+  arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+  lambdas(0)=(*Q)(0,1);
+  lambdas(1)=(*Q)(1,0); 
+  arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) rkappas(i)=(*Q)(2*i,2*i+2);
+  arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) lkappas(i)=(*Q)(2*i+2,2*i);
+  arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+  gammas(0)=1;
+  for(i=1;i<=k;i++) gammas(i)=(*Q)(2*i,2*i+1)/lambdas(0);
+
+  arma::rowvec sojourntimes = arma::zeros<arma::rowvec>(n);
+  arma::rowvec transitioncounts = arma::zeros<arma::rowvec>(n*n);
+  
+  for(i=0;i<n;i++) sojourntimes(i)=(*jodt)(i);
+  for(i=0;i<n;i++) for(j2=0;j2<n;j2++) transitioncounts(i*n+j2)=(*jodt)(n+i*n+j2);
+
+  double alphaprime = prior(4)+transitioncounts((2*j)*n+2*j+2)+transitioncounts((2*j+1)*n+2*j+3);
+  double betaprime = prior(5)+sojourntimes(2*j)+sojourntimes(2*j+1);
+
+    double newrkappaj=::Rf_rgamma(alphaprime, 1/betaprime);
+    double logaccept = (newrkappaj-rkappas(j))*(sojourntimes(2*j)+sojourntimes(2*j+1));
+    if(j==0) logaccept=logaccept+transitioncounts((2*j)*n+2*j)*log((Omega-newrkappaj-gammas(j)*lambdas(0))/(Omega-rkappas(j)-gammas(j)*lambdas(0)));
+    if(j==0) logaccept=logaccept+transitioncounts((2*j+1)*n+2*j+1)*log((Omega-newrkappaj-gammas(j)*lambdas(1))/(Omega-rkappas(j)-gammas(j)*lambdas(1)));
+    if(j>0)  logaccept=logaccept+transitioncounts((2*j)*n+2*j)*log((Omega-lkappas(j-1)-newrkappaj-gammas(j)*lambdas(0))/(Omega-lkappas(j-1)-rkappas(j)-gammas(j)*lambdas(0)));
+    if(j>0)  logaccept=logaccept+transitioncounts((2*j+1)*n+2*j+1)*log((Omega-lkappas(j-1)-newrkappaj-gammas(j)*lambdas(1))/(Omega-lkappas(j-1)-rkappas(j)-gammas(j)*lambdas(1)));
+
+    double compare= as<double>(runif(1));
+
+    if(j==0) if(newrkappaj+gammas(j)*lambdas(0)>Omega) return;
+    if(j==0) if(newrkappaj+gammas(j)*lambdas(1)>Omega) return;
+    if(j>0)  if(newrkappaj+gammas(j)*lambdas(0)+lkappas(j-1)>Omega) return;
+    if(j>0)  if(newrkappaj+gammas(j)*lambdas(1)+lkappas(j-1)>Omega) return;
+
+    if(logaccept<log(compare)) return;
+
+
+    (*Q)(2*j,2*j+2)=newrkappaj;
+    (*Q)(2*j+1,2*j+3)=newrkappaj;
+    if(j==0) (*Q)(0,0)=-newrkappaj-gammas(j)*lambdas(0);
+    if(j==0) (*Q)(1,1)=-newrkappaj-gammas(j)*lambdas(1);
+    if(j>0)  (*Q)(2*j,2*j)=-newrkappaj-lkappas(j-1)-gammas(j)*lambdas(0);
+    if(j>0)  (*Q)(2*j+1,2*j+1)=-newrkappaj-lkappas(j-1)-gammas(j)*lambdas(1);
+
+    (*B2)(2*j,2*j)=1+(*Q)(2*j,2*j)/Omega;
+    (*B2)(2*j+1,2*j+1)=1+(*Q)(2*j+1,2*j+1)/Omega;
+    (*B2)(2*j,2*j+2)=(*Q)(2*j,2*j+2)/Omega;
+    (*B2)(2*j+1,2*j+3)=(*Q)(2*j+1,2*j+3)/Omega;
+
+    (*B4)(2*j,2*j)=1+(*Q)(2*j,2*j)/Omega;
+    (*B4)(2*j+1,2*j+1)=1+(*Q)(2*j+1,2*j+1)/Omega;
+    (*B4)(2*j+2,2*j)=(*Q)(2*j,2*j+2)/Omega;
+    (*B4)(2*j+3,2*j+1)=(*Q)(2*j+1,2*j+3)/Omega;
+
+  return;
+}
+
+
+
+
+void updatelkappasmt(NumericMatrix* Q,arma::mat* B2,arma::mat* B4,arma::rowvec* jodt,double Omega,NumericVector prior,int j) {
+
+  int i;
+  int j2;
+  int n = (*Q).nrow();
+  int k=n/2-1;
+  arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+  lambdas(0)=(*Q)(0,1);
+  lambdas(1)=(*Q)(1,0); 
+  arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) rkappas(i)=(*Q)(2*i,2*i+2);
+  arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) lkappas(i)=(*Q)(2*i+2,2*i);
+  arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+  gammas(0)=1;
+  for(i=1;i<=k;i++) gammas(i)=(*Q)(2*i,2*i+1)/lambdas(0);
+
+  arma::rowvec sojourntimes = arma::zeros<arma::rowvec>(n);
+  arma::rowvec transitioncounts = arma::zeros<arma::rowvec>(n*n);
+
+  for(i=0;i<n;i++) sojourntimes(i)=(*jodt)(i);
+  for(i=0;i<n;i++) for(j2=0;j2<n;j2++) transitioncounts(i*n+j2)=(*jodt)(n+i*n+j2);
+
+  double alphaprime = prior(4)+transitioncounts((2*j)*n+2*j-2)+transitioncounts((2*j+1)*n+2*j-1);
+  double betaprime = prior(5)+sojourntimes(2*j)+sojourntimes(2*j+1);
+
+    double newlkappaj=::Rf_rgamma(alphaprime, 1/betaprime);
+    double logaccept = (newlkappaj-lkappas(j-1))*(sojourntimes(2*j)+sojourntimes(2*j+1));
+    if(j==k) logaccept=logaccept+transitioncounts((2*j)*n+2*j)*log((Omega-newlkappaj-gammas(j)*lambdas(0))/(Omega-lkappas(j-1)-gammas(j)*lambdas(0)));
+    if(j==k) logaccept=logaccept+transitioncounts((2*j+1)*n+2*j+1)*log((Omega-newlkappaj-gammas(j)*lambdas(1))/(Omega-lkappas(j-1)-gammas(j)*lambdas(1)));
+    if(j<k)  logaccept=logaccept+transitioncounts((2*j)*n+2*j)*log((Omega-rkappas(j)-newlkappaj-gammas(j)*lambdas(0))/(Omega-rkappas(j)-lkappas(j-1)-gammas(j)*lambdas(0)));
+    if(j<k)  logaccept=logaccept+transitioncounts((2*j+1)*n+2*j+1)*log((Omega-rkappas(j)-newlkappaj-gammas(j)*lambdas(1))/(Omega-rkappas(j)-lkappas(j-1)-gammas(j)*lambdas(1)));
+ 
+    double compare= as<double>(runif(1));
+
+    if(j==k) if(newlkappaj+gammas(j)*lambdas(0)>Omega) return;
+    if(j==k) if(newlkappaj+gammas(j)*lambdas(1)>Omega) return;
+    if(j<k)  if(newlkappaj+gammas(j)*lambdas(0)+rkappas(j)>Omega) return;
+    if(j<k)  if(newlkappaj+gammas(j)*lambdas(1)+rkappas(j)>Omega) return;
+ 
+    if(logaccept<log(compare)) return;
+
+    (*Q)(2*j,2*j-2)=newlkappaj;
+    (*Q)(2*j+1,2*j-1)=newlkappaj;
+    if(j==k) (*Q)(2*j,2*j)=-newlkappaj-gammas(j)*lambdas(0);
+    if(j==k) (*Q)(2*j+1,2*j+1)=-newlkappaj-gammas(j)*lambdas(1);
+    if(j<k)  (*Q)(2*j,2*j)=-newlkappaj-rkappas(j)-gammas(j)*lambdas(0);
+    if(j<k)  (*Q)(2*j+1,2*j+1)=-newlkappaj-rkappas(j)-gammas(j)*lambdas(1);
+
+    (*B2)(2*j,2*j)=1+(*Q)(2*j,2*j)/Omega;
+    (*B2)(2*j+1,2*j+1)=1+(*Q)(2*j+1,2*j+1)/Omega;
+    (*B2)(2*j,2*j-2)=(*Q)(2*j,2*j-2)/Omega;
+    (*B2)(2*j+1,2*j-1)=(*Q)(2*j+1,2*j-1)/Omega;
+
+    (*B4)(2*j,2*j)=1+(*Q)(2*j,2*j)/Omega;
+    (*B4)(2*j+1,2*j+1)=1+(*Q)(2*j+1,2*j+1)/Omega;
+    (*B4)(2*j-2,2*j)=(*Q)(2*j,2*j-2)/Omega;
+    (*B4)(2*j-1,2*j+1)=(*Q)(2*j+1,2*j-1)/Omega;
+
+  return;
+}
+
+
+void updategammasmt(NumericMatrix* Q,arma::mat* B2,arma::mat* B4,arma::rowvec* jodt,double Omega,NumericVector prior,int j) {
+
+  int i;
+  int j2;
+  int n = (*Q).nrow();
+  int k=n/2-1;
+  arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+  lambdas(0)=(*Q)(0,1);
+  lambdas(1)=(*Q)(1,0); 
+  arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) rkappas(i)=(*Q)(2*i,2*i+2);
+  arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+  for(i=0;i<k;i++) lkappas(i)=(*Q)(2*i+2,2*i);
+  arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+  gammas(0)=1;
+  for(i=1;i<=k;i++) gammas(i)=(*Q)(2*i,2*i+1)/lambdas(0);
+
+  arma::rowvec sojourntimes = arma::zeros<arma::rowvec>(n);
+  arma::rowvec transitioncounts = arma::zeros<arma::rowvec>(n*n);
+
+  for(i=0;i<n;i++) sojourntimes(i)=(*jodt)(i);
+  for(i=0;i<n;i++) for(j2=0;j2<n;j2++) transitioncounts(i*n+j2)=(*jodt)(n+i*n+j2);
+
+  double alphaprime = prior(6)+transitioncounts((2*j)*n+2*j+1)+transitioncounts((2*j+1)*n+2*j);
+  double betaprime = prior(7)+sojourntimes(2*j)*lambdas(0)+sojourntimes(2*j+1)*lambdas(1);
+
+    double newgammaj=::Rf_rgamma(alphaprime, 1/betaprime);
+    double logaccept = (newgammaj-gammas(j))*(sojourntimes(2*j)*lambdas(0)+sojourntimes(2*j+1)*lambdas(1));
+    if(j==k) logaccept=logaccept+transitioncounts((2*j)*n+2*j)*log((Omega-lkappas(j-1)-newgammaj*lambdas(0))/(Omega-lkappas(j-1)-gammas(j)*lambdas(0)));
+    if(j==k) logaccept=logaccept+transitioncounts((2*j+1)*n+2*j+1)*log((Omega-lkappas(j-1)-newgammaj*lambdas(1))/(Omega-lkappas(j-1)-gammas(j)*lambdas(1)));
+    if(j<k)  logaccept=logaccept+transitioncounts((2*j)*n+2*j)*log((Omega-lkappas(j-1)-rkappas(j)-newgammaj*lambdas(0))/(Omega-rkappas(j)-lkappas(j-1)-gammas(j)*lambdas(0)));
+    if(j<k)  logaccept=logaccept+transitioncounts((2*j+1)*n+2*j+1)*log((Omega-lkappas(j-1)-rkappas(j)-newgammaj*lambdas(1))/(Omega-rkappas(j)-lkappas(j-1)-gammas(j)*lambdas(1)));
+ 
+    double compare= as<double>(runif(1));
+
+    if(j==k) if(lkappas(j-1)+newgammaj*lambdas(0)>Omega) return;
+    if(j==k) if(lkappas(j-1)+newgammaj*lambdas(1)>Omega) return;
+    if(j<k)  if(lkappas(j-1)+newgammaj*lambdas(0)+rkappas(j)>Omega) return;
+    if(j<k)  if(lkappas(j-1)+newgammaj*lambdas(1)+rkappas(j)>Omega) return;
+
+    if(logaccept<log(compare)) return;
+
+
+    (*Q)(2*j,2*j+1)=newgammaj*lambdas(0);
+    (*Q)(2*j+1,2*j)=newgammaj*lambdas(1);
+    if(j==k) (*Q)(2*j,2*j)=-lkappas(j-1)-newgammaj*lambdas(0);
+    if(j==k) (*Q)(2*j+1,2*j+1)=-lkappas(j-1)-newgammaj*lambdas(1);
+    if(j<k)  (*Q)(2*j,2*j)=-lkappas(j-1)-rkappas(j)-newgammaj*lambdas(0);
+    if(j<k)  (*Q)(2*j+1,2*j+1)=-lkappas(j-1)-rkappas(j)-newgammaj*lambdas(1);
+
+    (*B2)(2*j,2*j)=1+(*Q)(2*j,2*j)/Omega;
+    (*B2)(2*j+1,2*j+1)=1+(*Q)(2*j+1,2*j+1)/Omega;
+    (*B2)(2*j,2*j+1)=(*Q)(2*j,2*j+1)/Omega;
+    (*B2)(2*j+1,2*j)=(*Q)(2*j+1,2*j)/Omega;
+
+    (*B4)(2*j,2*j)=1+(*Q)(2*j,2*j)/Omega;
+    (*B4)(2*j+1,2*j+1)=1+(*Q)(2*j+1,2*j+1)/Omega;
+    (*B4)(2*j+1,2*j)=(*Q)(2*j,2*j+1)/Omega;
+    (*B4)(2*j,2*j+1)=(*Q)(2*j+1,2*j)/Omega;
+
+  return;
+}
+
+
+
+
+void recordQksmt(NumericMatrix* Q,arma::rowvec* jodt,int n,int k) {
+  (*jodt)(n+n*n)=(*Q)(0,1);
+  (*jodt)(n+n*n+1)=(*Q)(1,0);
+  int i;
+  for(i=0;i<k;i++) (*jodt)(n+n*n+2+i)=(*Q)(2*i,2*i+2);
+  for(i=0;i<k;i++) (*jodt)(n+n*n+2+k+i)=(*Q)(2*i+2,2*i);
+  for(i=0;i<k;i++)(*jodt)(n+n*n+2+2*k+i)=(*Q)(2*(i+1),2*(i+1)+1)/(*Q)(0,1);
+
+  return;
+}
+
+
+// [[Rcpp::export]]
+NumericMatrix maketreelistMCMCksmt(List& x,NumericMatrix& Q,NumericVector& pid,NumericMatrix& B,double Omega,IntegerMatrix& nen,IntegerMatrix& nodelist_m,IntegerVector roots,int N,NumericVector& prior) {
+
+ 
+  RNGScope scope;
+
+  int i;
+  int j;
+  int kk;
+  int h;
+  int RandomlyChoosenTree;
+  int treecount=x.size();
+
+  // there are k+1 'rates' of evolution (2k+2 states total) 
+ int k=Q.nrow()/2-1;
+ arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+ lambdas(0)=Q(0,1);
+ lambdas(1)=Q(1,0); 
+ arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+ for(i=0;i<k;i++) rkappas(i)=Q(2*i,2*i+2);
+ arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+ for(i=0;i<k;i++) lkappas(i)=Q(2*i+2,2*i);
+ arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+ gammas(0)=1;
+ for(i=1;i<=k;i++) gammas(i)=Q(2*i,2*i+1)/lambdas(0);
+
+  List test=x[0];
+  int Nnode = as<int>(test["Nnode"]);
+  List maps=test["maps"];
+  List mapnames=test["mapnames"];
+  arma::imat edge =  as<arma::imat>(test["edge"]);
+  arma::irowvec edge1 = trans(edge.col(0));
+  arma::irowvec edge2 = trans(edge.col(1));
+  arma::imat nodestatesmatrix=as<arma::imat>(test["node.states"]);
+  arma::irowvec states = as<arma::irowvec>(test["states"]);
+  arma::mat PL((2*Nnode+1),Q.nrow());
+
+  const int branchcount = maps.size();
+  std::vector<Branch> brancharray(branchcount);
+
+  std::vector< std::vector<Branch> > BranchArray(treecount);
+  std::vector< arma::imat > Edge(treecount);
+  std::vector< arma::irowvec > Edge1(treecount);
+  std::vector< arma::irowvec > Edge2(treecount);
+  std::vector< arma::imat > NodeStatesMatrix(treecount);
+  std::vector< arma::irowvec > States(treecount);
+  std::vector< arma::mat > PartialLikelihood(treecount);
+
+  for(i=0;i<treecount;i++) {
+   test=x[i];
+   maps=test["maps"];
+   mapnames=test["mapnames"];
+   for(j=0;j<branchcount;j++) brancharray[j] = makeabranch(maps(j),mapnames(j));
+   BranchArray[i]=brancharray;
+   Edge[i]=as<arma::imat>(test["edge"]);
+   Edge1[i]=trans((Edge[i]).col(0));
+   Edge2[i]=trans((Edge[i]).col(1));
+   nodestatesmatrix=as<arma::imat>(test["node.states"]);
+   NodeStatesMatrix[i]=nodestatesmatrix;
+   states = as<arma::irowvec>(test["states"]);
+   States[i]=states;
+   PL.zeros();
+   for(kk=0;kk<states.size();kk++) {
+     if((states(kk)-2*floor(states(kk)/2))==0) {
+       for(j=1;j<Q.nrow();j=j+2) PL(kk,j) = 1;
+     }
+     if((states(kk)-2*floor(states(kk)/2))==1) {
+       for(j=0;j<Q.nrow();j=j+2) PL(kk,j) = 1;
+     }
+    }
+   PartialLikelihood[i]=PL;
+  }
+ 
+
+  // n is the number of states, n=2k+2
+  int n = B.nrow();
+  arma::mat B2(B.begin(),n,n,false);
+  arma::mat B4=trans(B2);
+  
+  arma::rowvec rootdist =as<arma::rowvec>(pid);
+  arma::imat ne_m=as<arma::imat>(nen);
+
+  List ret;
+
+  arma::rowvec jodt(n+n*n+2+3*k);
+  std::vector< arma::rowvec > DwellTimes(treecount);
+  for(i=0;i<treecount;i++) DwellTimes[i]=jodt;
+
+  // which tree should we use next
+  double wt = as<double>(runif(1));
+  arma::colvec weights(treecount);
+  weights.ones();
+
+  // to be returned matrix
+  arma::mat tbr=arma::zeros<arma::mat>(N,n+n*n+2+3*k+1);
+  for(i=0;i<N;i++){
+
+    for(j=0;j<treecount;j++) {
+      (DwellTimes[j]).zeros();
+      recordQksmt(&Q,&(DwellTimes[j]),n,k);
+      treesamplemtNS(&Q,&rootdist,&B2,&B4,Omega,branchcount,roots[j],N,Nnode,j,&ne_m,&BranchArray,&NodeStatesMatrix,&DwellTimes,&PartialLikelihood,&nodelist_m,&States,&Edge,&Edge1,&Edge2);
+    }
+
+
+    wt = as<double>(runif(1));
+    RandomlyChoosenTree=sampleOnce(weights,wt);
+ 
+    for(kk=0;kk<(n+n*n+2+3*k);kk++) tbr(i,kk)=(DwellTimes[RandomlyChoosenTree])(kk);
+    tbr(i,n+n*n+2+3*k)=RandomlyChoosenTree;
+
+    updateksl01mt(&Q,&B2,&B4,&(DwellTimes[RandomlyChoosenTree]),Omega,prior);
+    updateksl10mt(&Q,&B2,&B4,&(DwellTimes[RandomlyChoosenTree]),Omega,prior);
+    for(h=0;h<k;h++)  updaterkappasmt(&Q,&B2,&B4,&(DwellTimes[RandomlyChoosenTree]),Omega,prior,h);
+    for(h=1;h<=k;h++) updatelkappasmt(&Q,&B2,&B4,&(DwellTimes[RandomlyChoosenTree]),Omega,prior,h);
+    for(h=1;h<=k;h++) updategammasmt(&Q,&B2,&B4,&(DwellTimes[RandomlyChoosenTree]),Omega,prior,h);
+    
+
+    printf("%i \r",i);
+  }
+       				       
+
+  return wrap(tbr);
+
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
 
 
 

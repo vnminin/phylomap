@@ -157,3 +157,29 @@ BEGIN_RCPP
 END_RCPP
 }
 
+// maketreelistMCMCksmt
+NumericMatrix maketreelistMCMCksmt(List& x,NumericMatrix& Q,NumericVector& pid,NumericMatrix& B,double Omega,IntegerMatrix& nen_m,IntegerMatrix& nodelist_m,IntegerVector roots,int N,NumericVector& prior);
+RcppExport SEXP phylomap_maketreelistMCMCksmt(SEXP xSEXP,SEXP QSEXP,SEXP pidSEXP,SEXP BSEXP,SEXP OmegaSEXP,SEXP nen_mSEXP,SEXP nodelist_mSEXP,SEXP rootsSEXP,SEXP NSEXP,SEXP priorSEXP) {
+BEGIN_RCPP
+    SEXP __sexp_result;
+    {
+        Rcpp::RNGScope __rngScope;
+        Rcpp::traits::input_parameter< List& >::type x(xSEXP);
+        Rcpp::traits::input_parameter< NumericMatrix& >::type Q(QSEXP);
+        Rcpp::traits::input_parameter< NumericVector& >::type pid(pidSEXP);
+        Rcpp::traits::input_parameter< NumericMatrix& >::type B(BSEXP);
+        Rcpp::traits::input_parameter< double >::type Omega(OmegaSEXP);
+        Rcpp::traits::input_parameter< IntegerMatrix& >::type nen_m(nen_mSEXP);
+        Rcpp::traits::input_parameter< IntegerMatrix& >::type nodelist_m(nodelist_mSEXP);
+        Rcpp::traits::input_parameter< IntegerVector& >::type roots(rootsSEXP);
+        Rcpp::traits::input_parameter< int >::type N(NSEXP);
+        Rcpp::traits::input_parameter< NumericVector& >::type prior(priorSEXP);
+
+        NumericMatrix __result = maketreelistMCMCksmt(x,Q,pid,B,Omega,nen_m,nodelist_m,roots,N,prior);
+        PROTECT(__sexp_result = Rcpp::wrap(__result));
+    }
+    UNPROTECT(1);
+    return __sexp_result;
+END_RCPP
+}
+
