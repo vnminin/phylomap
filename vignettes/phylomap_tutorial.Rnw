@@ -65,7 +65,7 @@ Start R and load the phylomap library.
 library(phylomap)
 @
 
-Create a tridiagonal rate matrix.
+Start with a fixed, tridiagonal rate matrix.
 <<two>>=
 Q<-matrix(rep(0,400),nrow=20) 
 for(j in 1:19) Q[j,j+1]<-.003
@@ -139,6 +139,124 @@ multhist(numjumpEXP,numjumpMCMC,numjumpSPARSE)
 \caption{We show the distribution of the number of transitions on a phylogenetic tree for three methods.}
 \label{hist}
 \end{figure} 
+
+Next, explore functions that update the rate matrix at each interation of the MCMC. Start by importing the Cephalopod phylogenies.
+
+<<eight>>=
+cephalopodTrees = read.tree(file=
+system.file("extdata/Cephalopod/BLsonboots70.phy",package="phylomap"))
+tree.num = length(cephalopodTrees)
+cephalopodTraits = read.csv(file=
+system.file("extdata/Cephalopod/BLspecies70.csv",package="phylomap"),header=FALSE)
+@
+
+Prepare the first ten phylogenies for use with phylomap.
+
+<<nine>>=
+tip.num = dim(cephalopodTraits)[1]
+cephalopodTraitVec = numeric(tip.num)
+tipNames = as.character(cephalopodTraits[,1])
+cephalopodTraitVec = cephalopodTraits[,2]
+names(cephalopodTraitVec) = tipNames
+
+treelist<-cephalopodTrees
+
+for(wt in 1:10) {
+ atree<-treelist[[wt]]
+ branchcount<-length(atree$edge.length)
+ atree$maps<-list()
+ for(i in 1:length(atree$edge.length)) {
+  atree$maps[[i]]<-atree$edge.length[i]
+  names(atree$maps[[i]])<-1
+ }
+ tipstates<-rep(-10,length(atree$tip.label))
+ for(i in 1:length(atree$tip.label)) {
+  for(j in 1:length(cephalopodTraitVec)) {
+   if(atree$tip.label[i]==names(cephalopodTraitVec)[j]) tipstates[i]<-cephalopodTraitVec[j]+1
+  }
+ }
+ atree$states<-tipstates
+ atree$node.states<-matrix(rep(1,branchcount*2),nrow=branchcount)
+ for(j in 1:length(atree$tip.label)) {
+  row<-1
+  while(j!=atree$edge[row,2]) row<-row+1
+  atree$maps[[row]]<-rep(atree$edge.length[row]/2,2)
+  names(atree$maps[[row]])<-c(1,tipstates[j])
+ }
+ atree$mapnames<-list()
+ for(i in 1:length(atree$maps)) atree$mapnames[[i]]<-as.integer(names(atree$maps[[i]]))
+ for(i in 1:branchcount) if(atree$edge[i,2]<=70) atree$node.states[i,2]<-tipstates[atree$edge[i,2]]
+ atree<-makemapnames(atree)
+ treelist[[wt]]<-atree
+}
+@
+
+Initialize a rate matrix for a trait with two states, state 0 and state 1.
+
+<<ten>>=
+Q2<-matrix(c(-.1,.1,.1,-.1),nrow=2)
+@
+
+Create a prior distribution for the state of the root node. Our prior belief is that either state is equally likely at the root. 
+
+
+<<eleven>>=
+pid2<-c(0.5,0.5)
+@
+
+Specifiy the parameters that determine the prior distributions on the transition rates between state 0 and state 1. The prior on the rate of transitioning from state 0 to state 1 is gamma distributed with shape parameter equal to 0.55 and rate parameter equal to 1. The prior on the rate of transitioning from state 1 to state 0 is gamma distributed with shape parameter equal to 0.56 and rate parameter equal to 1.01. 
+
+
+<<tweleve>>=
+prior2r<-c(.55,1,.56,1.01)
+@
+
+Set your tuning parameter, and the number of substitution histories to generate.
+
+<<thirteen>>=
+Omega2=10
+N=100
+@
+
+Run the MCMC with a single phylogeny and a two state rate matrix for 100 iterations. 
+
+<<fourteen>>=
+cephAnl2rqf<-sumstatMCMCbf(atree,Q2,pid2,Omega2,N,prior2r)
+@
+
+Next, prepare phylomap for a hidden rates model with four states, (0, slow), (0, fast), (1, slow), and (1, fast). Initialize a four by four rate matrix.
+
+<<fifteen>>=
+Q4<-make2sQ(.1,.1,.2,.2,10) 
+@
+
+Create a prior distribution for the state of the root node. 
+
+<<sixteen>>=
+pid4<-c(0.25,0.25,0.25,0.25)
+@
+
+Specifiy the parameters that determine the prior distributions on the transition rates. The prior on the base rate of transitioning between states 0 and 1 is gamma distributed with shape parameter equal to 1 and rate parameter equal to 10. The prior on the rates of transitioning between slow and fast regimes is gamma distributed with shape parameter equal to 2 and rate parameter equal to 10. The prior on the multiplicative factor by which the base regime differs from the alternate regime is gamma distributed with shape parameter equal to 20 and rate parameter equal to 2.
+
+
+<<seventeen>>=
+prior4r<-c(1,10,2,10,20,2)
+@
+
+Set your tuning parameter, and the number of substitution histories to generate.
+
+<<eighteen>>=
+Omega4=10
+N=100
+@
+
+Run the MCMC with a single phylogeny and a four state rate matrix for 100 iterations. 
+
+<<nineteen>>=
+cephAnl4rqf<-sumstatMCMCks(atree,Q4,pid4,Omega4,N,prior4r)
+@
+
+
 
 
 %\bibliography{phylomap_tutorial}
