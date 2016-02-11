@@ -65,6 +65,8 @@ Start R and load the phylomap library.
 library(phylomap)
 @
 
+\section*{Fixed Rate Matrices}
+
 Start with a fixed, tridiagonal rate matrix.
 <<two>>=
 Q<-matrix(rep(0,400),nrow=20) 
@@ -140,6 +142,8 @@ multhist(numjumpEXP,numjumpMCMC,numjumpSPARSE)
 \label{hist}
 \end{figure} 
 
+\section*{Free Rate Matrices}
+
 Next, explore functions that update the rate matrix at each interation of the MCMC. Start by importing the Cephalopod phylogenies.
 
 <<eight>>=
@@ -191,6 +195,8 @@ for(wt in 1:10) {
 }
 @
 
+\subsection*{Two State Model, One Tree}
+
 Initialize a rate matrix for a trait with two states, state 0 and state 1.
 
 <<ten>>=
@@ -208,7 +214,7 @@ Specifiy the parameters that determine the prior distributions on the transition
 
 
 <<tweleve>>=
-prior2r<-c(.55,1,.56,1.01)
+prior2<-c(.55,1,.56,1.01)
 @
 
 Set your tuning parameter, and the number of substitution histories to generate.
@@ -221,42 +227,81 @@ N=100
 Run the MCMC with a single phylogeny and a two state rate matrix for 100 iterations. 
 
 <<fourteen>>=
-cephAnl2rqf<-sumstatMCMCbf(atree,Q2,pid2,Omega2,N,prior2r)
+cephAnl2<-sumstatMCMCbf(atree,Q2,pid2,Omega2,N,prior2)
 @
+
+The resulting object, cephAnl2, is a matrix where each row some summary statistics of the sampled trait history for one interation of the MCMC. The first column records the amount of time the trait spent in state 0 over the entire tree. The second column records the amount of time the trait spent in state 1 over the entire tree. Columns 3 through 6 record the number of transitions between each pair of states (including virtual transitions). Columns 7 and 8 report the parameters of the rate matrix. Column 9 contains the state of the root node. 
+
+An estimate of the number of transitions from state 0 to state 1 can be calculated by looking at the posterior median as follows. Column four can be used to approximate the entire posterior distribution of these transition counts. Please note that you will in general need to run your MCMC much longer than the 100 iterations we run here for valid inference. Please check convergence diagnostics carefully.
+
+<<fifteen>>=
+median(cephAnl2[,"n01"])
+@
+
+
+\subsection*{Four State Model, One Tree}
 
 Next, prepare phylomap for a hidden rates model with four states, (0, slow), (0, fast), (1, slow), and (1, fast). Initialize a four by four rate matrix.
 
-<<fifteen>>=
+<<sixteen>>=
 Q4<-make2sQ(.1,.1,.2,.2,10) 
 @
 
 Create a prior distribution for the state of the root node. 
 
-<<sixteen>>=
+<<seventeen>>=
 pid4<-c(0.25,0.25,0.25,0.25)
 @
 
 Specifiy the parameters that determine the prior distributions on the transition rates. The prior on the base rate of transitioning between states 0 and 1 is gamma distributed with shape parameter equal to 1 and rate parameter equal to 10. The prior on the rates of transitioning between slow and fast regimes is gamma distributed with shape parameter equal to 2 and rate parameter equal to 10. The prior on the multiplicative factor by which the base regime differs from the alternate regime is gamma distributed with shape parameter equal to 20 and rate parameter equal to 2.
 
 
-<<seventeen>>=
-prior4r<-c(1,10,2,10,20,2)
+<<eighteen>>=
+prior4<-c(1,10,2,10,20,2)
 @
 
 Set your tuning parameter, and the number of substitution histories to generate.
 
-<<eighteen>>=
+<<nineteen>>=
 Omega4=10
 N=100
 @
 
 Run the MCMC with a single phylogeny and a four state rate matrix for 100 iterations. 
 
-<<nineteen>>=
-cephAnl4rqf<-sumstatMCMCks(atree,Q4,pid4,Omega4,N,prior4r)
+<<twenty>>=
+cephAnl4<-sumstatMCMCks(atree,Q4,pid4,Omega4,N,prior4)
 @
 
+The resulting object, cephAnl4, is a matrix where each row some summary statistics of the sampled trait history for one interation of the MCMC. The first 4 columns record the amount of time the trait spent in each state over the entire tree. The next 16 columns record the number of transitions between each pair of states (including virtual transitions). Columns 21 through 25 report the parameters of the rate matrix. Column 26 contains the state of the root node. 
 
+An estimate of the number trait gains can be calculated by looking at the posterior median as follows. Columns 6 ($n_{01}$) and 16 ($n_{23}$) can be used to approximate the entire posterior distribution. Please note that you will in general need to run your MCMC much longer than the 100 iterations we run here for valid inference. Please check convergence diagnostics carefully.
+
+<<twentyone>>=
+median(cephAnl4[,6]+cephAnl4[,16])
+@
+
+\subsection*{Two State Model, Ten Trees}
+
+Next, explore functions that update the rate matrix at each interation of the MCMC and average over a prespecified set of phylogenies. Run the MCMC with ten phylogenies and a two state rate matrix for 100 iterations.
+
+The resulting object is similar to the matrix created by the sumstatMCMCbf function. In this case the last column contains the index of the tree used to record the summary statistics instead of the state of the root. 
+ 
+
+<<twentytwo>>=
+cephAnl2mt<-sumstatMCMCmt(treelist[1:10],Q2,pid2,Omega2,N,prior2)
+@
+
+\subsection*{Four State Model, Ten Trees}
+
+Run the MCMC with ten phylogenies and a four state rate matrix for 100 iterations. The prior on the base rate of transitioning from state 0 to state 1 is gamma distributed with shape parameter equal to 1 and rate parameter equal to 10. The prior on the base rate of transitioning from state 1 to state 0 is gamma distributed with shape parameter equal to 1.1 and rate parameter equal to 11. The prior on the rates of transitioning between slow and fast regimes is gamma distributed with shape parameter equal to 2 and rate parameter equal to 10. The prior on the multiplicative factor by which the base regime differs from the alternate regime is gamma distributed with shape parameter equal to 20 and rate parameter equal to 2. 
+
+The resulting object is similar to the matrix created by the sumstatMCMCks function. In this case the last column contains the index of the tree used to record the summary statistics instead of the state of the root. 
+
+<<twentythree>>=
+prior4mt<-c(1,10,1.1,11,2,10,20,2)
+cephAnl4mt<-sumstatMCMCksmt(treelist[(1:10)],Q4,pid4,Omega4,N,prior4mt)
+@
 
 
 %\bibliography{phylomap_tutorial}
