@@ -148,7 +148,8 @@ Next, explore functions that update the rate matrix at each interation of the MC
 
 <<eight>>=
 cephalopodTrees = read.tree(file=
-system.file("extdata/Cephalopod/BLsonboots70.phy",package="phylomap"))
+system.file("extdata/Cephalopod/BLsonboots70.phy"
+,package="phylomap"))
 tree.num = length(cephalopodTrees)
 cephalopodTraits = read.csv(file=
 system.file("extdata/Cephalopod/BLspecies70.csv",package="phylomap"),header=FALSE)
@@ -230,7 +231,7 @@ Run the MCMC with a single phylogeny and a two state rate matrix for 100 iterati
 cephAnl2<-sumstatMCMCbf(atree,Q2,pid2,Omega2,N,prior2)
 @
 
-The resulting object, cephAnl2, is a matrix where each row some summary statistics of the sampled trait history for one interation of the MCMC. The first column records the amount of time the trait spent in state 0 over the entire tree. The second column records the amount of time the trait spent in state 1 over the entire tree. Columns 3 through 6 record the number of transitions between each pair of states (including virtual transitions). Columns 7 and 8 report the parameters of the rate matrix. Column 9 contains the state of the root node. 
+The resulting object, cephAnl2, is a matrix where each row shows some summary statistics of the sampled trait history for one iteration of the MCMC. The first column records the amount of time the trait spent in state 0 over the entire tree. The second column records the amount of time the trait spent in state 1 over the entire tree. Columns 3 through 6 record the number of transitions between each pair of states (including virtual transitions). Columns 7 and 8 report the parameters of the rate matrix. Column 9 contains the state of the root node. 
 
 An estimate of the number of transitions from state 0 to state 1 can be calculated by looking at the posterior median as follows. Column four can be used to approximate the entire posterior distribution of these transition counts. Please note that you will in general need to run your MCMC much longer than the 100 iterations we run here for valid inference. Please check convergence diagnostics carefully.
 
@@ -273,7 +274,7 @@ Run the MCMC with a single phylogeny and a four state rate matrix for 100 iterat
 cephAnl4<-sumstatMCMCks(atree,Q4,pid4,Omega4,N,prior4)
 @
 
-The resulting object, cephAnl4, is a matrix where each row some summary statistics of the sampled trait history for one interation of the MCMC. The first 4 columns record the amount of time the trait spent in each state over the entire tree. The next 16 columns record the number of transitions between each pair of states (including virtual transitions). Columns 21 through 25 report the parameters of the rate matrix. Column 26 contains the state of the root node. 
+The resulting object, cephAnl4, is a matrix where each row shows some summary statistics of the sampled trait history for one iteration of the MCMC. The first 4 columns record the amount of time the trait spent in each state over the entire tree. The next 16 columns record the number of transitions between each pair of states (including virtual transitions). Columns 21 through 25 report the parameters of the rate matrix. Column 26 contains the state of the root node. 
 
 An estimate of the number trait gains can be calculated by looking at the posterior median as follows. Columns 6 ($n_{01}$) and 16 ($n_{23}$) can be used to approximate the entire posterior distribution. Please note that you will in general need to run your MCMC much longer than the 100 iterations we run here for valid inference. Please check convergence diagnostics carefully.
 
@@ -283,7 +284,7 @@ median(cephAnl4[,6]+cephAnl4[,16])
 
 \subsection*{Two State Model, Ten Trees}
 
-Next, explore functions that update the rate matrix at each interation of the MCMC and average over a prespecified set of phylogenies. Run the MCMC with ten phylogenies and a two state rate matrix for 100 iterations.
+Next, explore functions that update the rate matrix at each interation of the MCMC and average over a pre-specified set of phylogenies. Run the MCMC with ten phylogenies and a two state rate matrix for 100 iterations.
 
 The resulting object is similar to the matrix created by the sumstatMCMCbf function. In this case the last column contains the index of the tree used to record the summary statistics instead of the state of the root. 
  
