@@ -37,3 +37,11 @@ maketreelistMCMCksmt <- function(x,Q,pid,B,Omega,nen_m,nodelist_m,roots,N,prior)
     .Call('phylomap_maketreelistMCMCksmt', PACKAGE = 'phylomap', x,Q,pid,B,Omega,nen_m,nodelist_m,roots,N,prior)
 }
 
+maketreelistMCMC2sDICt <- function(x,Q,pid,B,Omega,nen,nodelist,root,N,prior) {
+    .Call('phylomap_maketreelistMCMC2sDICt', PACKAGE = 'phylomap', x,Q,pid,B,Omega,nen,nodelist,root,N,prior)
+}
+
+maketreelistMCMCksDICt <- function(x,Q,pid,B,Omega,nen,nodelist,root,N,prior) {
+    .Call('phylomap_maketreelistMCMCksDICt', PACKAGE = 'phylomap', x,Q,pid,B,Omega,nen,nodelist,root,N,prior)
+}
+

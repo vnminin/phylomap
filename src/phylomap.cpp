@@ -2908,7 +2908,351 @@ NumericMatrix maketreelistEXP(List& x,NumericMatrix& Q,NumericVector& pid,Intege
 
 
 
+///////////////////////////////////////////////////////////////
+/////////////////////// DIC CODE //////////////////////////////
+///////////////////////////////////////////////////////////////
 
+
+void PPupdatel01(NumericMatrix* Q,arma::mat* Q2,arma::mat* B2,arma::mat* B4,arma::mat* dwelltimes,int iteration,double Omega,NumericVector prior) {
+
+    int n00=(*dwelltimes)(iteration,2);
+    int n01=(*dwelltimes)(iteration,3);
+    double t0=(*dwelltimes)(iteration,0);
+    double l01=(*Q)(0,1);
+   
+    int n10=(*dwelltimes)(iteration,4);
+    int n11=(*dwelltimes)(iteration,5);
+    double t1=(*dwelltimes)(iteration,1);
+    double l10=(*Q)(1,0);
+
+    double newl01=::Rf_rgamma(prior(0)+n01, 1/(prior(1)+t0));
+    double newl10=l10;
+
+    if(newl01>Omega) return;
+
+    double accept=pow((Omega-newl01)/(Omega-l01),n00)*exp(t0*(newl01-l01));
+
+    if(accept>1) accept=1;
+    double compare= as<double>(runif(1));
+
+    (*Q)(0,0)=-newl01;
+    (*Q)(0,1)=newl01;
+    (*Q2)(0,0)=-newl01;
+    (*Q2)(0,1)=newl01;
+    (*B2)(0,0)=1-newl01/Omega;
+    (*B2)(0,1)=newl01/Omega;
+    (*B4)(0,0)=1-newl01/Omega;
+    (*B4)(1,0)=newl01/Omega;
+
+  return;
+}
+
+void PPupdatel10(NumericMatrix* Q,arma::mat* Q2,arma::mat* B2,arma::mat* B4,arma::mat* dwelltimes,int iteration,double Omega,NumericVector prior) {
+  
+    int n00=(*dwelltimes)(iteration,2);
+    int n01=(*dwelltimes)(iteration,3);
+    double t0=(*dwelltimes)(iteration,0);
+    double l01=(*Q)(0,1);
+   
+    int n10=(*dwelltimes)(iteration,4);
+    int n11=(*dwelltimes)(iteration,5);
+    double t1=(*dwelltimes)(iteration,1);
+    double l10=(*Q)(1,0);
+
+    double newl01=l01;
+    double newl10=::Rf_rgamma(prior(2)+n10, 1/(prior(3)+t1));
+
+    if(newl10>Omega) return;
+
+    double accept=pow((Omega-newl10)/(Omega-l10),n11)*exp(t1*(newl10-l10));
+
+    if(accept>1) accept=1;
+    double compare= as<double>(runif(1));
+
+
+    (*Q)(1,0)=newl10;
+    (*Q)(1,1)=-newl10;
+    (*Q2)(1,0)=newl10;
+    (*Q2)(1,1)=-newl10;
+    (*B2)(1,0)=newl10/Omega;
+    (*B2)(1,1)=1-newl10/Omega;
+    (*B4)(0,1)=newl10/Omega;
+    (*B4)(1,1)=1-newl10/Omega;
+
+  return;
+}
+
+
+// PPmakePL creates the partial likelihood matrix for independent tree samples
+arma::mat PPmakePL(List x,arma::irowvec states,arma::irowvec ne,NumericMatrix Q,arma::cube TransProb){
+  int Nnode = as<int>(x["Nnode"]);
+  arma::mat PL((2*Nnode+1),Q.nrow());
+  PL.zeros();
+  int i;
+  for(i=0;i<states.size();i++) PL(i,states(i)-1) = 1;
+
+  arma::imat edge =  as<arma::imat>(x["edge"]);
+  arma::irowvec edge1 = trans(edge.col(0));
+  arma::irowvec edge2 = trans(edge.col(1));
+
+  int n = as<int>(x["Nnode"]);
+  // for each node (row) calculate the probability of the tip states below that node conditioned on the node's state (column)
+  for(i=0;i<n;i++) {
+    PL.row(edge1(ne(2*i)-1)-1)=((TransProb.slice(ne(2*i)-1)*(PL.row(edge2(ne(2*i)-1)-1)).t())%(TransProb.slice(ne(2*i+1)-1)*(PL.row(edge2(ne(2*i+1)-1)-1)).t())).t();
+    // normalized for big trees...
+    PL.row(edge1(ne(2*i)-1)-1)=PL.row(edge1(ne(2*i)-1)-1)/sum(PL.row(edge1(ne(2*i)-1)-1));
+  }
+  return PL;
+}
+
+
+// PPmakePLD creates the partial likelihood matrix for independent tree samples and keeps track of the renormalizing factors
+arma::mat PPmakePLD(List x,arma::irowvec states,arma::irowvec ne,NumericMatrix Q,arma::cube TransProb,double *S){
+  int Nnode = as<int>(x["Nnode"]);
+  arma::mat PL((2*Nnode+1),Q.nrow());
+  PL.zeros();
+  int i;
+  for(i=0;i<states.size();i++) PL(i,states(i)-1) = 1;
+
+  arma::imat edge =  as<arma::imat>(x["edge"]);
+  arma::irowvec edge1 = trans(edge.col(0));
+  arma::irowvec edge2 = trans(edge.col(1));
+
+  int n = as<int>(x["Nnode"]);
+  // for each node (row) calculate the probability of the tip states below that node conditioned on the node's state (column)
+  for(i=0;i<n;i++) {
+    PL.row(edge1(ne(2*i)-1)-1)=((TransProb.slice(ne(2*i)-1)*(PL.row(edge2(ne(2*i)-1)-1)).t())%(TransProb.slice(ne(2*i+1)-1)*(PL.row(edge2(ne(2*i+1)-1)-1)).t())).t();
+    // normalized for big trees...
+    (*S)=(*S)+log(sum(PL.row(edge1(ne(2*i)-1)-1)));
+    PL.row(edge1(ne(2*i)-1)-1)=PL.row(edge1(ne(2*i)-1)-1)/sum(PL.row(edge1(ne(2*i)-1)-1));
+  }
+  return PL;
+}
+
+
+
+// [[Rcpp::export]]
+NumericMatrix maketreelistMCMC2sDICt(List& x,NumericMatrix& Q,NumericVector& pid,NumericMatrix& B,double Omega,IntegerVector& nen,IntegerVector& nodelist,int root,int N,NumericVector& prior) {
+
+  RNGScope scope;
+
+  int i;
+  int j;
+  int f;
+  List maps=x["maps"];
+  List mapnames=x["mapnames"];
+  const int branchcount = maps.size();
+  //Branch brancharray[branchcount];
+  std::vector<Branch> brancharray(branchcount);
+  for(i=0;i<maps.size();i++) brancharray[i] = makeabranch(maps(i),mapnames(i));
+  int branchnumber=mapnames.size();  
+
+ arma::imat edge =  as<arma::imat>(x["edge"]);
+ arma::irowvec edge1 = trans(edge.col(0));
+ arma::irowvec edge2 = trans(edge.col(1));
+ int Nnode = as<int>(x["Nnode"]);
+ 
+  arma::imat nodestatesmatrix=as<arma::imat>(x["node.states"]);
+  arma::irowvec states = as<arma::irowvec>(x["states"]);
+
+  arma::mat PL((2*Nnode+1),Q.nrow());
+  PL.zeros();
+  for(i=0;i<states.size();i++) PL(i,states(i)-1) = 1;
+ 
+  int n = B.nrow();
+  arma::mat B2(B.begin(),n,n,false);
+  arma::mat B4=trans(B2);
+  
+  arma::rowvec rootdist =as<arma::rowvec>(pid);
+  arma::irowvec ne=as<arma::irowvec>(nen);
+
+  List w = x;
+  List ret;
+
+
+  // DIC stuff
+  arma::mat Q2(Q.begin(),n,n,false);
+  arma::cube TransProb = arma::cube(Q.nrow(),Q.nrow(),branchnumber);
+  TransProb.zeros();
+  NumericVector edgelengths = x["edge.length"];
+  for(i=0;i<branchnumber;i++) TransProb.slice(i) = expmat(Q2*edgelengths(i));
+  arma::mat matexpPL=PPmakePL(x,states,ne,Q,TransProb);
+  double S=0;
+  double X=0;
+  // end DIC stuff
+
+  // dwell times, transition counts, l01 &l10, root state, log(p(y|Q))
+  arma::mat dwelltimes=arma::zeros<arma::mat>(N,n+n*n+2+1+1);
+
+  for(i=0;i<N;i++){
+    recordQ(&Q,&dwelltimes,i);
+
+    treesamplebf(&Q,&rootdist,&B2,&B4,Omega,&ne,&brancharray,branchnumber,&nodestatesmatrix,&dwelltimes,root,&PL,nodelist,i,N,&states,&edge,&edge1,&edge2,Nnode);
+
+    // DIC stuff
+
+    // matrix exponentiation log likelihood
+    for(j=0;j<branchnumber;j++) TransProb.slice(j) = expmat(Q2*edgelengths(j));
+    // update the Partial Likelihood matrix 
+    S=0;
+    X=0;
+    matexpPL=PPmakePLD(x,states,ne,Q,TransProb,&S);
+    // calculate and record log likelihood
+    for(j=0;j<n;j++) X=X+matexpPL(root-1,j)*rootdist(j);
+    dwelltimes(i,n+n*n+2+1)=log(X)+S; 
+
+    // \end DIC Stuff
+
+
+    PPupdatel01(&Q,&Q2,&B2,&B4,&dwelltimes,i,Omega,prior);
+    PPupdatel10(&Q,&Q2,&B2,&B4,&dwelltimes,i,Omega,prior);
+
+    printf("%i \r",i);
+  }
+
+
+  return wrap(dwelltimes);
+
+}
+
+
+// PPmakePLD creates the partial likelihood matrix for independent tree samples
+arma::mat PPmakePLksD(List x,arma::irowvec states,arma::irowvec ne,NumericMatrix Q,arma::cube TransProb,double *S){
+  int Nnode = as<int>(x["Nnode"]);
+  arma::mat PL((2*Nnode+1),Q.nrow());
+  PL.zeros();
+  int i;
+  int j;
+   for(i=0;i<states.size();i++) {
+     if((states(i)-2*floor(states(i)/2))==0) {
+       for(j=1;j<Q.nrow();j=j+2) PL(i,j) = 1;
+     }
+     if((states(i)-2*floor(states(i)/2))==1) {
+       for(j=0;j<Q.nrow();j=j+2) PL(i,j) = 1;
+     }
+    }
+
+
+  arma::imat edge =  as<arma::imat>(x["edge"]);
+  arma::irowvec edge1 = trans(edge.col(0));
+  arma::irowvec edge2 = trans(edge.col(1));
+
+  int n = as<int>(x["Nnode"]);
+  // for each node (row) calculate the probability of the tip states below that node conditioned on the node's state (column)
+  for(i=0;i<n;i++) {
+    PL.row(edge1(ne(2*i)-1)-1)=((TransProb.slice(ne(2*i)-1)*(PL.row(edge2(ne(2*i)-1)-1)).t())%(TransProb.slice(ne(2*i+1)-1)*(PL.row(edge2(ne(2*i+1)-1)-1)).t())).t();
+    // normalized for big trees...
+    (*S)=(*S)+log(sum(PL.row(edge1(ne(2*i)-1)-1)));
+    PL.row(edge1(ne(2*i)-1)-1)=PL.row(edge1(ne(2*i)-1)-1)/sum(PL.row(edge1(ne(2*i)-1)-1));
+  }
+  return PL;
+}
+
+// [[Rcpp::export]]
+NumericMatrix maketreelistMCMCksDICt(List& x,NumericMatrix& Q,NumericVector& pid,NumericMatrix& B,double Omega,IntegerVector& nen,IntegerVector& nodelist,int root,int N,NumericVector& prior) {
+
+  RNGScope scope;
+
+  int i;
+  int f;
+  double g;
+  List maps=x["maps"];
+  List mapnames=x["mapnames"];
+  const int branchcount = maps.size();
+  std::vector<Branch> brancharray(branchcount);
+  for(i=0;i<maps.size();i++) brancharray[i] = makeabranch(maps(i),mapnames(i));
+  int branchnumber=mapnames.size();  
+
+ arma::imat edge =  as<arma::imat>(x["edge"]);
+ arma::irowvec edge1 = trans(edge.col(0));
+ arma::irowvec edge2 = trans(edge.col(1));
+ int Nnode = as<int>(x["Nnode"]);
+ 
+ int k=Q.nrow()/2-1;
+ arma::rowvec lambdas = arma::zeros<arma::rowvec>(2);
+ lambdas(0)=Q(0,1);
+ lambdas(1)=Q(1,0); 
+ arma::rowvec rkappas = arma::zeros<arma::rowvec>(k);
+ for(i=0;i<k;i++) rkappas(i)=Q(2*i,2*i+2);
+ arma::rowvec lkappas = arma::zeros<arma::rowvec>(k);
+ for(i=0;i<k;i++) lkappas(i)=Q(2*i+2,2*i);
+ arma::rowvec gammas = arma::zeros<arma::rowvec>(k+1);
+ gammas(0)=1;
+ for(i=1;i<=k;i++) gammas(i)=Q(2*i,2*i+1)/lambdas(0);
+
+  arma::imat nodestatesmatrix=as<arma::imat>(x["node.states"]);
+  arma::irowvec states = as<arma::irowvec>(x["states"]);
+
+  arma::mat PL((2*Nnode+1),Q.nrow());
+  PL.zeros();
+  int j;
+   for(i=0;i<states.size();i++) {
+     if((states(i)-2*floor(states(i)/2))==0) {
+       for(j=1;j<Q.nrow();j=j+2) PL(i,j) = 1;
+     }
+     if((states(i)-2*floor(states(i)/2))==1) {
+       for(j=0;j<Q.nrow();j=j+2) PL(i,j) = 1;
+     }
+    }
+
+  int n = B.nrow();
+  arma::mat B2(B.begin(),n,n,false);
+  arma::mat B4=trans(B2);
+  
+  arma::rowvec rootdist =as<arma::rowvec>(pid);
+  arma::irowvec ne=as<arma::irowvec>(nen);
+
+
+  // DIC stuff
+  arma::mat Q2(Q.begin(),n,n,false);
+  arma::cube TransProb = arma::cube(Q.nrow(),Q.nrow(),branchnumber);
+  TransProb.zeros();
+  NumericVector edgelengths = x["edge.length"];
+  for(i=0;i<branchnumber;i++) TransProb.slice(i) = expmat(Q2*edgelengths(i));
+  arma::mat matexpPL=PPmakePL(x,states,ne,Q,TransProb);
+  double S=0;
+  double X=0;
+  // end DIC stuff
+
+  
+  // time spent in state, n**, l01, l10, kappas & gammas, root state, log(p(y|Q))
+  arma::mat dwelltimes=arma::zeros<arma::mat>(N,n+n*n+2+3*k+1+1);
+  int startcolumn=n+n*n+2+3*k+1+1+1;
+
+  for(i=0;i<N;i++){
+    recordQks(&Q,&dwelltimes,i,n,k);
+    treesampleks(&Q,&rootdist,&B2,&B4,Omega,&ne,&brancharray,branchnumber,&nodestatesmatrix,&dwelltimes,root,&PL,nodelist,i,N,&states,&edge,&edge1,&edge2,Nnode);
+
+    // DIC Stuff
+
+    // loglikelihood conditional on the number of jumps on each branch, m
+    //X=0;
+    //for(j=0;j<n;j++) X=X+PL(root-1,j)*rootdist(j);
+    //dwelltimes(i,n+n*n+2+3*k+1+1)=log(X)+S; 
+
+    // matrix exponentiation log likelihood
+    for(j=0;j<n;j++) for(f=0;f<n;f++) Q2(j,f)=Q(j,f);
+    for(j=0;j<branchnumber;j++) TransProb.slice(j) = expmat(Q2*edgelengths(j));
+    // update the Partial Likelihood matrix 
+    S=0;
+    X=0;
+    matexpPL=PPmakePLksD(x,states,ne,Q,TransProb,&S);
+    // calculate and record log likelihood
+    for(j=0;j<n;j++) X=X+matexpPL(root-1,j)*rootdist(j);
+    dwelltimes(i,n+n*n+2+3*k+1)=log(X)+S; 
+    // end DIC stuff
+
+    updateksl01(&Q,&B2,&B4,&dwelltimes,i,Omega,prior);
+    updateksl10(&Q,&B2,&B4,&dwelltimes,i,Omega,prior);
+    for(j=0;j<k;j++)  updaterkappas(&Q,&B2,&B4,&dwelltimes,i,Omega,prior,j);
+    for(j=1;j<=k;j++) updatelkappas(&Q,&B2,&B4,&dwelltimes,i,Omega,prior,j);
+    for(j=1;j<=k;j++) updategammas(&Q,&B2,&B4,&dwelltimes,i,Omega,prior,j);
+    printf("%i \r",i);
+  }
+
+  return wrap(dwelltimes);
+
+}
 
 
 
