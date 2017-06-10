@@ -513,6 +513,21 @@ void makePLrcpp(arma::irowvec* edge1,arma::irowvec* edge2,int Nnode,arma::mat* P
  return;
 }
 
+void makePLrcpp_bigtree(arma::irowvec* edge1,arma::irowvec* edge2,int Nnode,arma::mat* PL,arma::irowvec* ne,arma::mat* B2,arma::irowvec branchlengths){
+
+ arma::vec first;
+ arma::vec second;
+ for(int i=0;i<Nnode;i++) {
+   first=trans((*PL).row((*edge2)((*ne)(2*i+1)-1)-1));
+   second=trans((*PL).row((*edge2)((*ne)(2*i)-1)-1));
+   (*PL).row((*edge1)((*ne)(2*i)-1)-1)=trans(mmmmvFORpl(B2,&first,branchlengths((*ne)(2*i+1)-1)-1)%mmmmvFORpl(B2,&second,branchlengths((*ne)(2*i)-1)-1));
+    // normalized for big trees...
+   (*PL).row((*edge1)((*ne)(2*i)-1)-1)=(*PL).row((*edge1)((*ne)(2*i)-1)-1)/sum((*PL).row((*edge1)((*ne)(2*i)-1)-1));
+}
+
+ return;
+}
+
 
 
 // sampleinternalnodesSPARSE samples internal nodes conditional on tip states
@@ -648,6 +663,80 @@ arma::irowvec sampleinternalnodesMCMC(std::vector<Branch> *brancharray,int branc
 }
 
 
+arma::irowvec sampleinternalnodesMCMC_bigtree(std::vector<Branch> *brancharray,int branchnumber,arma::mat* PL,arma::rowvec* pid,arma::mat* B2,arma::mat* B4,int root,IntegerVector nodelist,arma::irowvec* ne,arma::imat* edge,arma::irowvec* edge1,arma::irowvec* edge2,int Nnode,arma::irowvec* states) {
+
+  RNGScope scope;
+ 
+  int i;
+  int j;
+
+  arma::irowvec branchlengths=arma::zeros<arma::irowvec>(branchnumber);
+  for(i=0;i<branchnumber;i++) branchlengths(i)=((*brancharray)[i]).names.size();
+
+  int n = (*B2).n_rows;
+
+  // states: vector containing tip node states
+  // sss: number of tips
+  int sss=(*states).size(); 
+  // edge: matrix containing parent labels (column 1) and child labels (column 2) for each edge (row)
+  // arma::imat edge = as<arma::imat>(xtree["edge"]);
+
+  // rm: vector to be returned, containing the states of all the nodes (tip nodes included)
+  arma::irowvec rm=arma::zeros<arma::irowvec>(2*sss-1);
+  // tip states remain unchanged
+  for(i=0;i<sss;i++) rm(i)=(*states)(i)-1;
+  // pid: the probability vector for states at the root
+
+  // PL is the partial likelihood matrix, it the probability of the observed tip states under each node (row) assuming that node is in: state 1 (column 1), state 2 (column 2), ...
+  makePLrcpp_bigtree(edge1,edge2,Nnode,PL,ne,B2,branchlengths);
+  // covec is proportional to the vector of probabilities, Pr(root|tip states)
+  arma::rowvec covec = (*pid)%(*PL).row(root-1);
+  // tops is a NumericVector version of covec
+  NumericVector tops(n);
+  for(i=0;i<n;i++) tops(i)= covec(i);
+  // sts is a vector of state names from 0 to n-1
+  IntegerVector sts(n);
+  sts(0)=0;
+  for(i=1;i<n;i++) sts(i)=sts(i-1)+1;
+  // sample the root state, armadillo's sample function requires a NumericVector of probabilities
+  rm(root-1)=as<int>(RcppArmadillo::sample(sts,1,1,tops));
+
+  //arma::rowvec vecc = arma::zeros<arma::rowvec>(n);
+  arma::vec vecc = arma::zeros<arma::vec>(n);
+  NumericVector veccer(n);
+
+  int cn;
+  int pn;
+  int ps;
+  int ae;
+  int nll = nodelist.size();
+  if(nll>0) {  
+    // sample a state for each (non-root) internal node starting below the root and working down
+    for(i=0;i<nll;i++) {
+      cn=nodelist(i)-1; //child node
+      j=0;
+      while((*edge)(j,1)!=nodelist(i)) j++;
+      pn = (*edge)(j,0)-1; //parent node
+      ps = rm(pn); //parent state
+      ae = j; //appropriate edge
+
+      // (probability of transitioning from parent state to child state) * (probability of tips below child | child state)
+      vecc = arma::zeros<arma::vec>(n);
+      vecc(ps) = 1;
+      vecc = Tvmmp(B4,vecc,branchlengths(ae)-1)%trans((*PL).row(cn));
+
+      // armadillo sample needs a NumericVector
+      for(j=0;j<n;j++) veccer(j)=vecc(j);
+      rm(cn)=as<int>(RcppArmadillo::sample(sts,1,1,veccer));
+    }
+  }
+
+  for(i=0;i<(2*sss-1);i++) rm(i)=rm(i)+1;
+
+  return rm;
+
+}
+
 
 
 
@@ -695,7 +784,17 @@ RNGScope scope;
   return;
 }
 
+void treesample_bigtree(NumericMatrix* Q,arma::rowvec* pid,arma::mat* B2,arma::mat* B4,double Omega,arma::irowvec* ne,std::vector<Branch> *brancharray,int branchnumber,arma::imat* nodestatesmatrix,arma::mat* dwelltimes,int root,arma::mat* PL,IntegerVector nodelist,int counter,int N,arma::irowvec* states,arma::imat* edge,arma::irowvec* edge1,arma::irowvec* edge2,int Nnode) {
+RNGScope scope;
+ 
+  int i;
+  updatenodestates(brancharray,edge,nodestatesmatrix,sampleinternalnodesMCMC_bigtree(brancharray,branchnumber,PL,pid,B2,B4,root,nodelist,ne,edge,edge1,edge2,Nnode,states));
+  // for each branch, resample segmental states
+  for(i=0;i<branchnumber;i++) sampleabranch(&((*brancharray)[i]),B2,Omega,Q,dwelltimes,(*Q).nrow(),counter);
+  for(i=0;i<branchnumber;i++) updatedwelltimes(counter,&((*brancharray)[i]),dwelltimes);
 
+  return;
+}
 
 
 // convert arma::mat to arma::sp_mat
@@ -836,6 +935,55 @@ NumericMatrix maketreelistMCMC(List& x,NumericMatrix& Q,NumericVector& pid,Numer
 }
 
 
+// For big trees we need to ensure the Partial Likelihood Probabilities don't get too small
+// So we use a different makePL function that renormalizes each row
+
+// [[Rcpp::export]]
+NumericMatrix maketreelistMCMC_bigtree(List& x,NumericMatrix& Q,NumericVector& pid,NumericMatrix& B,double Omega,IntegerVector& nen,IntegerVector& nodelist,int root,int N) {
+
+  RNGScope scope;
+
+  int i;
+  List maps=x["maps"];
+  List mapnames=x["mapnames"];
+  const int branchcount = maps.size();
+  //Branch brancharray[branchcount];
+  std::vector<Branch> brancharray(branchcount);
+  for(i=0;i<maps.size();i++) brancharray[i] = makeabranch(maps(i),mapnames(i));
+  int branchnumber=mapnames.size();  
+
+ arma::imat edge =  as<arma::imat>(x["edge"]);
+ arma::irowvec edge1 = trans(edge.col(0));
+ arma::irowvec edge2 = trans(edge.col(1));
+ int Nnode = as<int>(x["Nnode"]);
+ 
+  arma::imat nodestatesmatrix=as<arma::imat>(x["node.states"]);
+  arma::irowvec states = as<arma::irowvec>(x["states"]);
+
+  arma::mat PL((2*Nnode+1),Q.nrow());
+  PL.zeros();
+  for(i=0;i<states.size();i++) PL(i,states(i)-1) = 1;
+ 
+  int n = B.nrow();
+  arma::mat B2(B.begin(),n,n,false);
+  arma::mat B4=trans(B2);
+  
+  arma::rowvec rootdist =as<arma::rowvec>(pid);
+  arma::irowvec ne=as<arma::irowvec>(nen);
+
+  List w = x;
+  List ret;
+
+  arma::mat dwelltimes=arma::zeros<arma::mat>(N,n+n*(n-1));
+
+  for(i=0;i<N;i++){
+    treesample_bigtree(&Q,&rootdist,&B2,&B4,Omega,&ne,&brancharray,branchnumber,&nodestatesmatrix,&dwelltimes,root,&PL,nodelist,i,N,&states,&edge,&edge1,&edge2,Nnode);
+    printf("%i \r",i);
+  }
+
+  return wrap(dwelltimes);
+
+}
 
 
 
