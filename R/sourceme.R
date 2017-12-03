@@ -331,3 +331,106 @@ make4stateDICm<-function(mat,atree,pid,Omega) {
  return(DIC)
 
 }
+
+
+#############################################
+########## For DIC Vignette #################
+#############################################
+
+findroot<-function(x) reorder(x,order="pruningwise")$edge[dim(x$edge)[1],1]
+
+# this function counts the number of times the state increased by exactly 1
+countgains<-function(statevec) return(sum(diff(statevec)==1))
+countlosses<-function(statevec) return(sum(diff(statevec)==-1))
+
+samplethebranch<-function(startstate,branchlength,Q) {
+ n<-dim(Q)[1]
+ statespace<-c(1:n)
+ state<-startstate
+ # dab: distance along branch
+ dab<-0
+ segmentlengths<-NULL
+ segmentstates<-c(startstate)
+ i<-0
+ while(dab<branchlength&i<10000) {
+  seg_len<-rexp(1,rate=-Q[state,state])
+  dab<-dab+seg_len
+  if(dab<branchlength) {
+   segmentlengths<-c(segmentlengths,seg_len)
+   if(n>2)  state<-(statespace[-state])[sample(c(1:(n-1)),size=1,prob=Q[state,-state])]
+   if(n==2) state<-1-(state-2)
+   segmentstates<-c(segmentstates,state)
+  }
+  if(dab>branchlength) {
+   segmentlengths<-c(segmentlengths,seg_len-(dab-branchlength))
+  }
+  # for fear of not stopping
+  i<-i+1
+ }
+ returnme<-list(state,segmentlengths,segmentstates)
+ names(returnme)<-c("endstate","segment_lengths","segment_states")
+ return(returnme)
+}
+
+sample2statehistory<-function(tree,Q,pid) {
+
+ nodestates<-rep(0,tree$Nnode+length(tree$states))
+ n<-dim(Q)[1]
+ rootnode<-findroot(tree)
+ #sample the root state
+ rootstate<-sample(c(1:n),size=1,prob=pid)
+ #record the root state
+ nodestates[rootnode]=rootstate
+
+ edgemat<-apply(reorder(tree,order="postorder")$edge,2,rev)
+ edgelengths<-rev(reorder(tree,order="postorder")$edge.length)
+
+ n01<-0 
+ n10<-0
+ t0<-0
+ t1<-0
+
+ for(i in 1:length(edgemat[,1])) {
+  ps<-nodestates[edgemat[i,1]]
+  branch<-samplethebranch(ps,edgelengths[i],Q)
+   if(length(branch$segment_lengths)!=length(branch$segment_states)) {
+    print("branch sampler yields inconsistent results")
+    return
+   }
+  nodestates[edgemat[i,2]]<-branch$endstate
+  n01<-n01+countgains(branch$segment_states)
+  n10<-n10+countlosses(branch$segment_states)
+  t0<-t0+sum(branch$segment_lengths[branch$segment_states==1])
+  t1<-t1+sum(branch$segment_lengths[branch$segment_states==2])
+
+ }
+
+ rm<-c(nodestates,n01,n10,t0,t1)
+ return(rm)
+}
+
+
+
+
+
+
+changemytipstates<-function(data,atree) {
+ branchcount<-length(atree$edge.length)
+ tipstates<-data[1:70]
+ ### turn 4 states into 2 states
+ tipstates<-(((data[1:70]%%2)-1)*-1)+1
+ atree$states<-tipstates
+ atree$node.states<-matrix(rep(1,branchcount*2),nrow=branchcount)
+ for(j in 1:length(atree$tip.label)) {
+  row<-1
+  while(j!=atree$edge[row,2]) row<-row+1
+  atree$maps[[row]]<-rep(atree$edge.length[row]/2,2)
+  names(atree$maps[[row]])<-c(1,tipstates[j])
+ }
+ atree$mapnames<-list()
+ for(i in 1:length(atree$maps)) atree$mapnames[[i]]<-as.integer(names(atree$maps[[i]]))
+ for(i in 1:branchcount) if(atree$edge[i,2]<=70) atree$node.states[i,2]<-tipstates[atree$edge[i,2]]
+ atree<-makemapnames(atree)
+ atreeR<-atree
+ return(atreeR)
+}
