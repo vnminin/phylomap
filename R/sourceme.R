@@ -434,3 +434,83 @@ changemytipstates<-function(data,atree) {
  atreeR<-atree
  return(atreeR)
 }
+
+
+
+
+###
+### big tree DIC code
+###
+
+make2stateDICbig<-function (mat, atree, pid,ne) {
+    root = myreorder(atree)
+    l01 <- mean(mat[, "l01"])
+    l10 <- mean(mat[, "l10"])
+    Q <- matrix(c(-l01, l10, l01, -l10), nrow = 2)
+    branchnumber = length(atree$maps)
+    nodecount <- 2 * atree$Nnode + 1
+    TP2 <- array(rep(0, 4 * branchnumber), dim = c(2, 2, branchnumber))
+    for (i in 1:branchnumber) TP2[, , i] = expm(Q * atree$edge.length[i])
+    n <- atree$Nnode
+    edge <- atree$edge
+    #ne = pruningwiseedgeorder(atree)
+    PL <- matrix(rep(0, 2 * nodecount), nrow = nodecount)
+    for (i in 1:length(atree$states)) {
+        if (atree$states[i] == 1) 
+            PL[i, ] = c(1, 0)
+        if (atree$states[i] == 2) 
+            PL[i, ] = c(0, 1)
+    }
+    S=0
+    for (i in 1:n) {
+     PL[edge[ne[2*i-1],1],] = (TP2[,,ne[2*i-1]] %*% PL[edge[ne[2*i-1],2],]) * (TP2[,,ne[2*i]] %*% PL[edge[ne[2*i],2],])
+     S=S+log(sum(PL[edge[ne[2*i-1],1],]))
+     PL[edge[ne[2*i-1],1],]=PL[edge[ne[2*i-1],1],]/sum(PL[edge[ne[2*i-1],1],])
+    }
+    D <- -2 * (log(as.numeric(PL[root, ] %*% pid))+S)
+    pD <- mean(-2 * mat[, "log(p(y|Q))"]) - D
+    DIC <- D + 2 * pD
+    return(DIC)
+}
+
+make4stateDICbig<-function(mat,atree,pid,ne) {
+  root = myreorder(atree)
+  l01<-mean(mat[,"l01"])
+  l10<-mean(mat[,"l10"])
+  k01<-mean(mat[,"k01"])
+  k10<-mean(mat[,"k10"])
+  gamma<-mean(mat[,"gamma"])
+  Q<-make2sQ(l01,l10,k01,k10,gamma) 
+
+  ### make transition probability matrices
+  branchnumber=length(atree$maps) 
+  nodecount<-2*atree$Nnode+1
+  TP2<-array(rep(0,16*branchnumber),dim=c(4,4,branchnumber))
+  for(i in 1:branchnumber) TP2[,,i] = expm(Q*atree$edge.length[i])
+
+  ### make Partial Likelihood matrix
+  n<-atree$Nnode
+  edge<-atree$edge
+  #ne=pruningwiseedgeorder(atree)
+
+  PL<-matrix(rep(0,4*nodecount),nrow=nodecount)
+  for(i in 1:length(atree$states)) {
+   if(atree$states[i]==1) PL[i,]=c(1,0,1,0)
+   if(atree$states[i]==2) PL[i,]=c(0,1,0,1)
+  }  
+  S=0
+  for(i in 1:n) {
+   PL[edge[ne[2*i-1],1],]=(TP2[,,ne[2*i-1]]%*%PL[edge[ne[2*i-1],2],])*(TP2[,,ne[2*i]]%*%PL[edge[ne[2*i],2],])
+   S=S+log(sum(PL[edge[ne[2*i-1],1],]))
+   PL[edge[ne[2*i-1],1],]=PL[edge[ne[2*i-1],1],]/sum(PL[edge[ne[2*i-1],1],])
+  }
+
+  ### D(\hat{Q})
+  D<- -2*(log(as.numeric(PL[root,]%*%pid))+S)
+  ### pD:
+  pD<-mean(-2*mat[,"log(p(y|Q))"])-D
+  ### DIC:
+  DIC<-D+2*pD
+
+  return(DIC)
+}
