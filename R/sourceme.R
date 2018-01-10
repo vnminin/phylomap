@@ -591,7 +591,7 @@ make_12_chains<-function(seed,Qs,trees,pids,Omegas,N,priors) {
 
 
 
- ne<-pruningwiseedgeorder(atree)
+ ne<-pruningwiseedgeorder(atree2)
 
  DICtree2<-matrix(rep(0,6),nrow=2)
  DICtree4<-matrix(rep(0,6),nrow=2)
