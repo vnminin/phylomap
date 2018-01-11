@@ -621,3 +621,34 @@ make_12_chains<-function(seed,Qs,trees,pids,Omegas,N,priors) {
  return(list(DICtree2,DICtree4))
 
 }
+
+###
+### Combines tree simulation and make_12_chains into a single step
+###
+
+simulate_estimate<-function(seed,atree,N) {
+ library(expm)
+
+ Q2<-matrix(c(-.001,.006,.001,-.006),nrow=2)
+ pid2<-c(0.5,0.5)
+ atree2<-simulate_2_state_tree(seed,atree,Q2,pid2)
+ prior2r<-c(.55,1,.55,1)
+ prior2d<-c(1,.1,1,.1)
+ prior2s<-c(.01,.01,.01,.01)
+
+ Q4<-make2sQ(.001,.001,.001,.03,16) 
+ pid4<-c(0.25,0.25,0.25,0.25)
+ atree4<-simulate_4_state_tree(seed,atree,Q4,pid4)
+ prior4r<-c(1,10,2,10,20,2)
+ prior4d<-c(1,.1,1,.1,1,.1)
+ prior4s<-c(.01,.01,.01,.01,.01,.01)
+ 
+ priors<-list(prior2r,prior2d,prior2s,prior4r,prior4d,prior4s)
+ Qs<-list(Q2,Q4)
+ trees<-list(atree2,atree4)
+ pids<-list(pid2,pid4)
+ Omegas<-list(10,10)
+
+ DIC_list<-make_12_chains(seed,Qs,trees,pids,Omegas,N,priors)
+ return(DIC_list)
+}
