@@ -582,12 +582,12 @@ make_12_chains<-function(seed,Qs,trees,pids,Omegas,N,priors) {
  Q<-Qs[[2]];tree<-trees[[2]];pid<-pids[[2]];Omega<-Omegas[[2]];prior<-priors[[5]]
  SIMfsfd<-sumstatMCMCksDICt(tree,Q,pid,Omega,N,prior)
  colnames(SIMfsfd)<-c("t1","t2","t3","t4","n11","n12","n13","n14","n21","n22","n23","n24","n31","n32","n33","n34","n41","n42","n43","n44","l01","l10","k01","k10","gamma","root_state","log(p(y|Q))")
- write(t(SIMfsfd),file=paste("SIM",seed,"squa4s4Pd.RData",sep=""),ncolumns=10)
+ saveRDS(SIMfsfd,file=paste("SIM",seed,"squa4s4Pd.RData",sep=""))
 
  Q<-Qs[[2]];tree<-trees[[2]];pid<-pids[[2]];Omega<-Omegas[[2]];prior<-priors[[6]]
  SIMfsfs<-sumstatMCMCksDICt(tree,Q,pid,Omega,N,prior)
  colnames(SIMfsfs)<-c("t1","t2","t3","t4","n11","n12","n13","n14","n21","n22","n23","n24","n31","n32","n33","n34","n41","n42","n43","n44","l01","l10","k01","k10","gamma","root_state","log(p(y|Q))")
- saveRDS(SIMfsfs,file=paste("SIM",seed,"squa4s4Ps.RData",sep=""),)
+ saveRDS(SIMfsfs,file=paste("SIM",seed,"squa4s4Ps.RData",sep=""))
 
 
 
