@@ -652,3 +652,12 @@ simulate_estimate<-function(seed,atree,N) {
  DIC_list<-make_12_chains(seed,Qs,trees,pids,Omegas,N,priors)
  return(DIC_list)
 }
+
+# We prefer the model with the smallest DIC value. 
+# DIC_mat is 2 by 3. First row corresponds to a 2-state DIC.
+# Second row corresponds to a 4-state DIC. Columns correspond
+# to restricted, diffuse, and spike priors respectively. 
+correct_DIC_decision_counter<-function(DIC_mat,true_state_size) {
+ if(true_state_size==2) return(as.numeric(DIC_mat[1,]<DIC_mat[2,]))
+ if(true_state_size==4) return(as.numeric(DIC_mat[1,]>DIC_mat[2,]))
+}
