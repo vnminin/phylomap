@@ -661,3 +661,42 @@ correct_DIC_decision_counter<-function(DIC_mat,true_state_size) {
  if(true_state_size==2) return(as.numeric(DIC_mat[1,]<DIC_mat[2,]))
  if(true_state_size==4) return(as.numeric(DIC_mat[1,]>DIC_mat[2,]))
 }
+
+###
+### corHMM AIC code
+###
+
+# We prefer the model with the smallest AIC value. 
+correct_AIC_decision_counter<-function(AIC_vec,true_state_size) {
+ if(true_state_size==2) return(as.numeric(AIC_vec[1]<AIC_vec[2]))
+ if(true_state_size==4) return(as.numeric(AIC_vec[1]>AIC_vec[2]))
+}
+
+# 1 means corHMM's AIC result choose correctly, 0 means incorrectly
+get_corHMM_AIC_result<-function(seed,atree,true_state_count) {
+ library(corHMM)
+ library(expm)
+ if(true_state_count==2) {
+  Q2 <- matrix(c(-0.001, 0.006, 0.001, -0.006), nrow = 2)
+  pid2 <- c(0.5, 0.5)
+  atree2 <- simulate_2_state_tree(seed, atree, Q2, pid2)
+  traitmate2<-data.frame(atree2$tip.label,as.integer(atree2$state-1))
+  names(traitmate2)<-c("species","T1")
+  one.cat2 <- corHMM(atree2,traitmate2,rate.cat=1,node.states="marginal", ip=1)
+  two.cat2 <- corHMM(atree2,traitmate2,rate.cat=2,node.states="marginal", ip=1) 
+  AIC_vec<-c(one.cat2$AIC,two.cat2$AIC)
+  return(correct_AIC_decision_counter(AIC_vec,2))
+ }
+
+ if(true_state_count==4) {
+  Q4 <- make2sQ(0.001, 0.001, 0.001, 0.03, 16)
+  pid4 <- c(0.25, 0.25, 0.25, 0.25)
+  atree4 <- simulate_4_state_tree(seed, atree, Q4, pid4)
+  traitmate4<-data.frame(atree4$tip.label,as.integer(atree2$state-1))
+  names(traitmate4)<-c("species","T1")
+  one.cat4 <- corHMM(atree4,traitmate4,rate.cat=1,node.states="marginal", ip=1)
+  two.cat4 <- corHMM(atree4,traitmate4,rate.cat=2,node.states="marginal", ip=1) 
+  AIC_vec<-c(one.cat4$AIC,two.cat4$AIC)
+  return(correct_AIC_decision_counter(AIC_vec,4))
+ }
+}
