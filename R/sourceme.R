@@ -663,6 +663,34 @@ correct_DIC_decision_counter<-function(DIC_mat,true_state_size) {
 }
 
 ###
+### Once simulate_estimate has been run 10 times with seeds 1:10,
+### We combine the results into a single 2 by 3 matrix which contains
+### the counts of the number of times DIC correctly choose the 2-state
+### model (top row) and the number of times DIC correctly choose the
+### 4 state model (bottom row). The first column corresponds to the
+### restricted priors, the second column corresponds to the diffuse 
+### priors, and the third column corresponds to the spike priors.
+###
+combine_DIC_results<-function(iterations) {
+ ten_DIC_sets_tree2<-vector("list",iterations)
+ for(i in 1:iterations) ten_DIC_sets_tree2[[i]]<-readRDS(paste("SIM",100+i,"_DICtree2.RData",sep=""))
+ noca_tree2_list<-lapply(ten_DIC_sets_tree2,correct_DIC_decision_counter,2)
+ ten_DIC_sets_tree4<-vector("list",iterations)
+ for(i in 1:iterations) ten_DIC_sets_tree4[[i]]<-readRDS(paste("SIM",100+i,"_DICtree4.RData",sep=""))
+ noca_tree4_list<-lapply(ten_DIC_sets_tree4,correct_DIC_decision_counter,4)
+ noca_tree2_matrix <- matrix(unlist(noca_tree2_list), ncol = 3, byrow = TRUE)
+ noca_tree4_matrix <- matrix(unlist(noca_tree4_list), ncol = 3, byrow = TRUE)
+ correct_counts<-matrix(nrow=2,ncol=3)
+ colnames(correct_counts)<-c("restricted","diffuse","spike")
+ rownames(correct_counts)<-c("truth: 2 states","truth: 4 states")
+ correct_counts[1,]<-apply(noca_tree2_matrix,2,sum)
+ correct_counts[2,]<-apply(noca_tree4_matrix,2,sum)
+ saveRDS(correct_counts,file="correct_counts.RData")
+ return(correct_counts)
+}
+
+
+###
 ### corHMM AIC code
 ###
 
