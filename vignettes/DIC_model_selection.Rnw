@@ -54,7 +54,7 @@ options(width=74, continue=" ")
   }
 \end{center}
 
-This tutorial shows how to use the R package phylomap to calculate DIC< deviance information criterion, for a tree with 70 tips. To get started, install the phylomap R package from GitHub. 
+This tutorial shows how to use the R package phylomap to calculate DIC, deviance information criterion, for a tree with 70 tips. To get started, install the phylomap R package from GitHub. 
 \begin{verbatim}
 > install.packages("devtools")
 > library(devtools)
