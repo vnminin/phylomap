@@ -728,3 +728,48 @@ get_corHMM_AIC_result<-function(seed,atree,true_state_count) {
   return(correct_AIC_decision_counter(AIC_vec,4))
  }
 }
+
+#
+# run corHMM's AIC code for 
+# 10 trees with tip data simulated from a 2-state model and
+# 10 trees with tip data simulated from a 4-state model
+# compare the AIC results for each using 2-state and 4-state models
+# record when AIC chooses the correct model
+# returns a 2 by 10 matrix
+# the first row corresponds to a true 2-state model
+# the second row corresponds to a true 4-state model
+# a 1 represents a correct choice by AIC, 0 incorrect
+create_AIC_results<-function() {
+ library(expm)
+ atree<-readRDS(file=system.file("extdata/Squamate/phylomap_compatible_squamate_tree.RData",package="phylomap"))
+ seeds<-rep(100,10)+c(1:10)
+ two_state_AIC_results<-rep(NA,10)
+ four_state_AIC_results<-rep(NA,10)
+ for(i in 1:10) {
+  two_state_AIC_results[i]<-get_corHMM_AIC_result(seeds[i],atree,2)
+  four_state_AIC_results[i]<-get_corHMM_AIC_result(seeds[i],atree,4)
+  cat(i/10,"\r")
+ }
+ Aic_results<-rbind(two_state_AIC_results,four_state_AIC_results)
+ rownames(Aic_results)<-c("two_state","four_state")
+ saveRDS(Aic_results,file="squamate_tree_AIC_results.RData")
+ # number correct using corHMM's AIC when 2-state is true: sum(two_state_AIC_results)
+ # number correct using corHMM's AIC when 4-state is true: sum(four_state_AIC_results)
+ return(Aic_results)
+}  
+
+###
+### Combine DIC and AIC results into one dataframe
+###
+### after running simulate_estimate on the squamate tree with
+### seeds 101 through 110 and after running create_AIC_results
+### combine the DIC and AIC results into a single dataframe
+###
+create_dataframe_for_plotting<-function() {
+ DIC_portion<-combine_DIC_results(10)
+ AIC_counts<-readRDS(file="squamate_tree_AIC_results.RData")
+ AIC_portion<-as.matrix(apply(AIC_counts,1,sum),nrow=2)
+ rm<-cbind(DIC_portion,AIC_portion)
+ colnames(rm)[4]<-"AIC"
+ return(data.frame(rm))
+}
