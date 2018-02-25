@@ -773,3 +773,38 @@ create_dataframe_for_plotting<-function() {
  colnames(rm)[4]<-"AIC"
  return(data.frame(rm))
 }
+
+
+#######
+####### Plot DIC/AIC results for Squamate tree
+####### 
+
+
+squamate_DIC_plot<-function(pm) {
+ par(mar=c(6.1,4.6,4.1,2.1))
+ dsp<-plot(0,0,xlab="",xlim=c(1,4),ylim=c(0,10),xaxt="n",ylab="number of true positives",pch=16,col="white",main="Model Selection Results: 3,951 Tip Tree",yaxt="n",cex.axis=2,cex.lab=2,cex.main=2)
+
+ dsp<-dsp+abline(h=c(0:10),col="lightgrey")
+ dsp<-dsp+axis(1, at=c(1,2,3,4),labels=c("DIC","DIC","DIC","AIC"), las=1,cex.axis=1.8)
+ dsp<-dsp+axis(1, at=c(1,2,3,4),labels=c("      restricted","  diffuse","spike",""),pos=-1.1, las=1,cex.axis=1.8,tick=FALSE)
+ dsp<-dsp+axis(1, at=c(1,2,3,4),labels=c("priors","priors"," priors",""),pos=-1.6, las=1,cex.axis=1.8,tick=FALSE)
+
+ dsp<-dsp+axis(2, at=c(0:10),labels=c(0:10), las=1,cex=2)
+
+ dsp<-dsp+points(c(1,2,3,4),pm[1,],col="blue",pch=16,cex=2)
+ dsp<-dsp+points(c(1,2,3,4),pm[2,],col="blue",pch=17,cex=2)
+ return(dsp)
+}
+
+add_labels_DIC_squamate_plot<-function(dsp) {
+ dsp<-dsp+text(2,3.6,"true model:",cex=2)
+ dsp<-dsp+text(2,3,"2-state",cex=2)
+ dsp<-dsp+arrows(1.7,3,1.1,2.1,lwd=2)
+ dsp<-dsp+arrows(2,2.7,2,0.2,lwd=2)
+
+ dsp<-dsp+text(1.6,7.6,"true model:",cex=2)
+ dsp<-dsp+text(1.6,7,"4-state",cex=2)
+ dsp<-dsp+arrows(1.6,7.8,1.95,9.8,lwd=2)
+ dsp<-dsp+arrows(2.1,7.6,2.9,8,lwd=2)
+ return(dsp)
+}
